@@ -9,6 +9,19 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Syntax only: the files import gi:// modules, which only exist inside gjs/GNOME Shell.
+      - name: Check JavaScript syntax
+        run: git ls-files -z '*.js' | xargs -0 -n1 node --check
+      - name: Lint Python
+        run: pipx run ruff==0.16.10 check --isolated --select E4,E7,E9,F relay
+
   test:
     runs-on: ubuntu-latest
     steps:
