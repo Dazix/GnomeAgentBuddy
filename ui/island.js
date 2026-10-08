@@ -125,8 +125,8 @@ class Island extends St.Widget {
         this._metrics = notchMetrics(scale);
         const pad = this._metrics.margin;
         const compact = this._settings.get_boolean('compact-height');
-        this._box.set_style(`padding: ${pad + (compact ? 2 : 6)}px ${pad + 10}px;`);
-        this._header.set_style(`padding: ${compact ? 2 : 4}px 12px;`);
+        this._box.set_style(`padding: ${pad + (compact ? 4 : 6)}px ${pad + 10}px;`);
+        this._header.set_style(`padding: ${compact ? 0 : 4}px 12px;`);
         this._bg.queue_repaint();
         this._reposition();
         if (this._shown) {
