@@ -1,4 +1,4 @@
-import {Mood, SessionStore, State, MAX_STEPS, parseQuestion, suggestionOptions, summarizeTool} from '../model/sessionStore.js';
+import {Mood, SessionStore, State, MAX_STEPS, describeInput, displayText, parseQuestion, suggestionOptions, summarizeTool} from '../model/sessionStore.js';
 import {assertEqual, assertTrue, test} from './harness.js';
 
 function makeStore() {
@@ -155,6 +155,42 @@ test('a request carries the session title', () => {
     store.handleEvent(ev('SessionStart'));
     store.sessions.get('claude:s1').title = 'Fix login bug';
     assertEqual(store.handleEvent(ev('PermissionRequest', {tool_name: 'Bash'})).title, 'Fix login bug');
+});
+
+test('displayText: invisible and direction-changing characters are written out', () => {
+    assertEqual(displayText('ls\n\tok'), 'ls\n\tok');
+    assertEqual(displayText('rm‮ fdp.exe'), 'rm<U+202E> fdp.exe');
+    assertEqual(displayText('a​b\u0000c\u001B[31m\r'), 'a<U+200B>b<U+0000>c<U+001B>[31m<U+000D>');
+    assertEqual(displayText('x\u{E0041}y'), 'x<U+E0041>y');
+    assertEqual(displayText(null), '');
+});
+
+test('describeInput: the whole command, then every other argument', () => {
+    const long = `echo ${'a'.repeat(900)} && rm -rf ~`;
+    const shown = describeInput({command: long, description: 'cleanup', timeout: 5000});
+    assertEqual(shown.text, `${long}\ndescription: cleanup\ntimeout: 5000`);
+    assertEqual(shown.complete, true);
+    // A tool without a known main argument still shows what it was given.
+    assertEqual(describeInput({prompt: 'delete everything', subagent_type: 'x'}).text,
+        'prompt: delete everything\nsubagent_type: x');
+    assertEqual(describeInput(undefined), {text: '', complete: true});
+});
+
+test('describeInput: anything that cannot be shown whole makes the request incomplete', () => {
+    // The relay cut the command: 2000 bytes and an ellipsis.
+    assertEqual(describeInput({command: `${'x'.repeat(2000)}…`}).complete, false);
+    // A genuine ellipsis in a short command is fine.
+    assertEqual(describeInput({command: 'echo wait…'}).complete, true);
+    // A long side argument is cut for display, so it is incomplete too.
+    assertEqual(describeInput({command: 'ls', env: 'y'.repeat(400)}).complete, false);
+});
+
+test('a request is incomplete when its command could not be shown whole', () => {
+    const {store} = makeStore();
+    const cut = store.handleEvent(ev('PermissionRequest', {tool_name: 'Bash', tool_input: {command: `${'x'.repeat(2000)}…`}}));
+    assertEqual(cut.incomplete, true);
+    const fine = store.handleEvent(ev('PermissionRequest', {session_id: 's2', tool_name: 'Bash', tool_input: {command: 'ls'}}));
+    assertEqual([fine.incomplete, fine.display], [false, 'ls']);
 });
 
 test('a request carries the moment the agent takes over in its terminal', () => {

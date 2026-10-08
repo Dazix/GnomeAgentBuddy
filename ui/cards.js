@@ -1,16 +1,17 @@
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
 import {AGENTS} from '../lib/hookInstaller.js';
-import {State} from '../model/sessionStore.js';
+import {State, displayText} from '../model/sessionStore.js';
 
 export const agentLabel = id => AGENTS[id]?.label ?? id;
 
-function label(text, styleClass, {lines = 1} = {}) {
+function label(text, styleClass, {lines = 1, ellipsize = true} = {}) {
     const actor = new St.Label({text, style_class: styleClass, x_expand: true, y_align: Clutter.ActorAlign.CENTER});
     const clutterText = actor.get_clutter_text();
-    clutterText.set_ellipsize(Pango.EllipsizeMode.END);
+    clutterText.set_ellipsize(ellipsize ? Pango.EllipsizeMode.END : Pango.EllipsizeMode.NONE);
     if (lines > 1) {
         clutterText.set_line_wrap(true);
         clutterText.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR);
@@ -25,18 +26,59 @@ function button(text, styleClass, onClick) {
     return actor;
 }
 
+/** How long a new card ignores clicks and keys, so a card that replaces another under the pointer cannot be answered by accident. */
+const ARM_MS = 400;
+
+/**
+ * A card cannot be answered in its first moments. Without this, a click or key aimed at
+ * one request (say the previous card, answered in the terminal a heartbeat ago) could
+ * land on the next request's Yes before anyone has seen it.
+ *
+ * `hold(button)` keeps a button dead and dimmed until then; `isArmed()` guards handlers
+ * and key shortcuts.
+ */
+function makeArming(card) {
+    let armed = false;
+    let source = 0;
+    const held = [];
+    source = GLib.timeout_add(GLib.PRIORITY_DEFAULT, ARM_MS, () => {
+        source = 0;
+        armed = true;
+        for (const button of held) {
+            button.reactive = true;
+            button.remove_style_pseudo_class('disabled');
+        }
+        return GLib.SOURCE_REMOVE;
+    });
+    GLib.Source.set_name_by_id(source, '[GnomeAgentBuddy] card arming');
+    card.connect('destroy', () => {
+        if (source)
+            GLib.source_remove(source);
+    });
+    return {
+        isArmed: () => armed,
+        hold(button) {
+            held.push(button);
+            if (!armed) {
+                button.reactive = false;
+                button.add_style_pseudo_class('disabled');
+            }
+        },
+    };
+}
+
 /** One single- or multi-select question; calls `onChange(questionText, answer|null)`. */
-function buildQuestion(question, onChange) {
+function buildQuestion(question, onChange, arming) {
     const box = new St.BoxLayout({vertical: true, style_class: 'ab-question'});
     if (question.header)
-        box.add_child(label(question.header, 'ab-caption'));
-    box.add_child(label(question.question, 'ab-text', {lines: 3}));
+        box.add_child(label(displayText(question.header), 'ab-caption'));
+    box.add_child(label(displayText(question.question), 'ab-text', {lines: 3}));
 
     const picked = new Set();
     const buttons = [];
     for (const option of question.options) {
         const optionButton = new St.Button({
-            label: option.label, style_class: 'ab-button ab-option', can_focus: true, x_expand: true,
+            label: displayText(option.label), style_class: 'ab-button ab-option', can_focus: true, x_expand: true,
             toggle_mode: true,
         });
         optionButton.connect('clicked', () => {
@@ -53,6 +95,7 @@ function buildQuestion(question, onChange) {
                 other.checked = other === optionButton;
             onChange(question.question, option.label);
         });
+        arming.hold(optionButton);
         buttons.push(optionButton);
         box.add_child(optionButton);
     }
@@ -83,15 +126,18 @@ function addCountdown(card, request) {
  */
 export function buildRequestCard(request, onDecision) {
     const card = new St.BoxLayout({vertical: true, style_class: 'ab-card ab-request'});
+    const arming = makeArming(card);
     const title = request.project ? `${agentLabel(request.agent)} · ${request.project}` : agentLabel(request.agent);
     card.add_child(label(title, 'ab-caption'));
     // The session's name in Claude Code, so several sessions in one project stay apart.
     if (request.title)
-        card.add_child(label(request.title, 'ab-session-name'));
+        card.add_child(label(displayText(request.title), 'ab-session-name'));
 
     if (request.questions) {
         const answers = new Map();
         const send = button('Send', 'ab-allow', () => {
+            if (!arming.isArmed())
+                return;
             const picked = Object.fromEntries(answers);
             onDecision(JSON.stringify({answers: picked}));
         });
@@ -114,7 +160,7 @@ export function buildRequestCard(request, onDecision) {
                 send.emit('clicked', 0);
         };
         for (const question of request.questions)
-            card.add_child(buildQuestion(question, update));
+            card.add_child(buildQuestion(question, update, arming));
         if (request.canDecide) {
             const row = new St.BoxLayout({style_class: 'ab-row'});
             row.add_child(send);
@@ -126,29 +172,50 @@ export function buildRequestCard(request, onDecision) {
         return card;
     }
 
-    card.add_child(label(request.summary, 'ab-text ab-mono', {lines: 4}));
-    if (request.detail && request.detail !== request.summary.split(' · ')[1])
-        card.add_child(label(request.detail, 'ab-hint ab-mono', {lines: 3}));
+    // What is being approved, in full: every argument, nothing cut, invisible characters
+    // written out (model/sessionStore.js describeInput). It scrolls instead of being ellipsized,
+    // because a command whose end is hidden is a command nobody has really read.
+    card.add_child(label(`Tool: ${displayText(request.tool) || 'unknown'}`, 'ab-caption'));
+    const inner = new St.BoxLayout({vertical: true});
+    inner.add_child(label(request.display || request.summary, 'ab-text ab-mono', {lines: 1000, ellipsize: false}));
+    const scroll = new St.ScrollView({
+        style_class: 'ab-command', hscrollbar_policy: St.PolicyType.NEVER,
+        vscrollbar_policy: St.PolicyType.AUTOMATIC, overlay_scrollbars: true,
+    });
+    scroll.set_child(inner);
+    card.add_child(scroll);
+    if (['Edit', 'MultiEdit', 'Write', 'NotebookEdit'].includes(request.tool))
+        card.add_child(label('The change itself is shown in the terminal.', 'ab-hint'));
 
     if (request.canDecide) {
         // Same choices as Claude Code's own prompt: Yes, its "Yes, and ..." suggestions, No.
-        const choices = [
-            {text: 'Yes', decision: 'allow', style: 'ab-allow'},
-            ...(request.options ?? []).map(o => ({text: o.label, decision: JSON.stringify({suggestion: o.index}), style: ''})),
-            {text: 'No', decision: 'deny', style: 'ab-deny'},
-        ];
+        // Unless the call could not be shown whole: then only No, since a Yes would approve
+        // something nobody saw.
+        const choices = request.incomplete
+            ? [{text: 'No', decision: 'deny', style: 'ab-deny'}]
+            : [
+                {text: 'Yes', decision: 'allow', style: 'ab-allow'},
+                ...(request.options ?? []).map(o => ({text: o.label, decision: JSON.stringify({suggestion: o.index}), style: ''})),
+                {text: 'No', decision: 'deny', style: 'ab-deny'},
+            ];
+        if (request.incomplete)
+            card.add_child(label(`Too long to show in full. Answer in ${agentLabel(request.agent)}.`, 'ab-hint ab-warning'));
         const list = new St.BoxLayout({vertical: true, style_class: 'ab-choices'});
         choices.forEach((choice, i) => {
             const item = new St.Button({style_class: `ab-button ab-choice ${choice.style}`, can_focus: true, x_expand: true});
             item.set_child(label(`${i + 1}. ${choice.text}`, 'ab-choice-text'));
-            item.connect('clicked', () => onDecision(choice.decision));
+            item.connect('clicked', () => {
+                if (arming.isArmed())
+                    onDecision(choice.decision);
+            });
+            arming.hold(item);
             list.add_child(item);
         });
         card.add_child(list);
         // Number keys pick a choice (the island forwards them while the card is open).
         card.choose = number => {
             const choice = choices[number - 1];
-            if (!choice)
+            if (!choice || !arming.isArmed())
                 return false;
             onDecision(choice.decision);
             return true;
@@ -193,7 +260,7 @@ export function buildSessionList(sessions, {compact = false} = {}) {
         const head = new St.BoxLayout();
         head.add_child(new St.Widget({style_class: `ab-dot ${STATE_CLASS[session.state] ?? ''}`,
             y_align: Clutter.ActorAlign.CENTER}));
-        head.add_child(label(session.title || session.project || session.cwd || session.id, 'ab-session-name'));
+        head.add_child(label(displayText(session.title || session.project || session.cwd || session.id), 'ab-session-name'));
         // With a title the project moves next to the agent, so neither is lost.
         const origin = session.title && session.project
             ? `${agentLabel(session.agent)} · ${session.project}` : agentLabel(session.agent);

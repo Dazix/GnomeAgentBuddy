@@ -60,6 +60,18 @@
     font-family: monospace;
 }
 
+/* The command being approved: shown whole, scrolls when it is long. */
+.ab-command {
+    max-height: 190px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.ab-warning {
+    color: #ffb84d;
+}
+
 .ab-row {
     spacing: 8px;
     margin-top: 4px;

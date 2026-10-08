@@ -129,6 +129,33 @@ test('a symlinked config (dotfiles) is written through and the link stays', () =
     }
 });
 
+const modeOf = path => Gio.File.new_for_path(path)
+    .query_info('unix::mode', Gio.FileQueryInfoFlags.NONE, null).get_attribute_uint32('unix::mode') & 0o7777;
+
+test('permissions: a private config stays private (file, backup), and a new one is created private', () => {
+    const home = tempHome();
+    try {
+        const path = `${home}/.claude/settings.json`;
+        write(path, '{"env":{"API_KEY":"secret"}}');
+        GLib.chmod(path, 0o600);
+
+        const backup = apply(plan('claude', true, '/r/agentbuddy-hook', home));
+        assertEqual(modeOf(path).toString(8), '600');
+        assertEqual(modeOf(backup).toString(8), '600');
+
+        // A mode the user chose is kept as it was, not widened to the default.
+        GLib.chmod(path, 0o640);
+        apply(plan('claude', false, '/r/agentbuddy-hook', home));
+        assertEqual(modeOf(path).toString(8), '640');
+
+        // A file that did not exist is not world-readable either.
+        apply(plan('gemini', true, '/r/agentbuddy-hook', home));
+        assertEqual(modeOf(`${home}/.gemini/settings.json`).toString(8), '600');
+    } finally {
+        remove(home);
+    }
+});
+
 test('installRelay copies the relay executable and is idempotent', () => {
     const home = tempHome();
     try {

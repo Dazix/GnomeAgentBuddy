@@ -45,6 +45,58 @@ export function summarizeTool(tool, input = {}) {
     return name;
 }
 
+/**
+ * Characters that change how text looks without showing up themselves: control
+ * characters, soft hyphen, zero-width and bidirectional marks and overrides, the
+ * invisible tag block. In a command they could make what the card shows differ from
+ * what runs, so they are written out as `<U+202E>`. Newline and tab stay.
+ */
+const INVISIBLE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F­؜​-‏‪-‮⁠-⁯﻿]|[\u{E0000}-\u{E007F}]/gu;
+
+/** `text` made safe to show: nothing in it is invisible. */
+export function displayText(text) {
+    return String(text ?? '').replace(INVISIBLE, ch =>
+        `<U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}>`);
+}
+
+/** What the relay does to a string past this many bytes: cut it and add an ellipsis. */
+const RELAY_CUT_BYTES = 1990;
+const SECONDARY_LIMIT = 300;
+const PRIMARY_KEYS = ['command', 'file_path', 'path', 'url', 'pattern', 'query'];
+
+const looksCut = text => text.endsWith('…') && new TextEncoder().encode(text).length >= RELAY_CUT_BYTES;
+
+/**
+ * Everything a tool call asks for, as text for the permission card: the main
+ * argument (command, path, url...) in full, then every other argument as
+ * `name: value`. `complete` is false when something could not be shown whole (the
+ * relay cut it, or a side argument is long), so the card must not offer approval.
+ *
+ * @returns {{text: string, complete: boolean}}
+ */
+export function describeInput(input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+        return {text: '', complete: true};
+    let complete = true;
+    const lines = [];
+    const primary = PRIMARY_KEYS.find(key => typeof input[key] === 'string' && input[key] !== '');
+    if (primary) {
+        lines.push(input[primary]);
+        complete = !looksCut(input[primary]);
+    }
+    for (const [key, value] of Object.entries(input)) {
+        if (key === primary)
+            continue;
+        const shown = typeof value === 'string' ? value : JSON.stringify(value);
+        if (shown === undefined || shown === '')
+            continue;
+        if (shown.length > SECONDARY_LIMIT || looksCut(shown))
+            complete = false;
+        lines.push(`${key}: ${shown.length > SECONDARY_LIMIT ? `${shown.slice(0, SECONDARY_LIMIT)}…` : shown}`);
+    }
+    return {text: displayText(lines.join('\n')), complete};
+}
+
 /** The AskUserQuestion input, normalised for the UI, or null when it is not one. */
 export function parseQuestion(tool, input) {
     if (tool !== 'AskUserQuestion' || !input || !Array.isArray(input.questions))
@@ -234,6 +286,7 @@ export class SessionStore {
     _addRequest(session, payload, respond) {
         const tool = payload.tool_name ?? '';
         const questions = parseQuestion(tool, payload.tool_input);
+        const shown = describeInput(payload.tool_input);
         const agent = session.agent;
         const request = {
             id: this._nextId++,
@@ -242,8 +295,11 @@ export class SessionStore {
             project: session.project,
             title: session.title,
             tool,
-            summary: summarizeTool(tool, payload.tool_input),
+            summary: displayText(summarizeTool(tool, payload.tool_input)),
             detail: this._detail(payload.tool_input),
+            // All of the call's arguments, safe to show, and whether they fit the card whole.
+            display: shown.text,
+            incomplete: !shown.complete,
             questions,
             options: suggestionOptions(payload.permission_suggestions),
             // Only an agent whose reply the relay can honour gets Allow/Deny buttons.
