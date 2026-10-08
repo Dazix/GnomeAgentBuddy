@@ -15,8 +15,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install gjs
         run: sudo apt-get update && sudo apt-get install -y gjs libglib2.0-bin
-      - name: Validate GSettings schema
-        run: glib-compile-schemas --strict --dry-run schemas/
+      # Compiles for real (not --dry-run): a test reads the compiled schema.
+      - name: Compile and validate GSettings schema
+        run: glib-compile-schemas --strict schemas/
       - name: Extension unit tests
         run: gjs -m tests/run.js
       - name: Relay unit tests
