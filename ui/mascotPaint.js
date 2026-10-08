@@ -16,26 +16,33 @@ const INK = [0.09, 0.11, 0.14];
 /**
  * The body is not a circle but a wobbling blob whose shape follows the mood.
  * `sx`/`sy` stretch it, `wobbleA`/`wobbleB` ripple its outline (2 and 3 lobes,
- * `speed` rad/s), `droop` melts the bottom flat and wide. All numbers, so the
+ * at a fixed speed), `droop` melts the bottom flat and wide. All numbers, so the
  * widget can ease from one mood's shape to the next.
  */
 export const SHAPES = {
-    [Mood.SLEEPY]: {sx: 1.025, sy: 0.93, wobbleA: 0.025, wobbleB: 0.015, speed: 1.0, droop: 0.35, armAngle: 0.35, armBend: -0.3, armSwing: 0.03, armSpeed: 1.0, armPhase: 0},
-    [Mood.IDLE]: {sx: 1.00, sy: 1.00, wobbleA: 0.035, wobbleB: 0.020, speed: 2.0, droop: 0.1, armAngle: 0.55, armBend: -0.4, armSwing: 0.08, armSpeed: 2.0, armPhase: 0},
-    [Mood.WORKING]: {sx: 1.00, sy: 1.00, wobbleA: 0.035, wobbleB: 0.020, speed: 2.0, droop: 0.1, armAngle: 0.9, armBend: -1.2, armSwing: 0.25, armSpeed: 14.0, armPhase: 3.14},
-    [Mood.ALERT]: {sx: 0.96, sy: 1.03, wobbleA: 0.042, wobbleB: 0.040, speed: 6.0, droop: 0.05, armAngle: 2.5, armBend: 0.3, armSwing: 0.35, armSpeed: 12.0, armPhase: 0},
-    [Mood.HAPPY]: {sx: 1.04, sy: 0.98, wobbleA: 0.050, wobbleB: 0.025, speed: 4.5, droop: 0.05, armAngle: 2.7, armBend: 0.2, armSwing: 0.2, armSpeed: 9.0, armPhase: 0},
-    [Mood.SAD]: {sx: 1.05, sy: 0.92, wobbleA: 0.025, wobbleB: 0.018, speed: 1.2, droop: 0.5, armAngle: 0.15, armBend: -0.6, armSwing: 0.03, armSpeed: 1.2, armPhase: 0},
+    [Mood.SLEEPY]: {sx: 1.025, sy: 0.93, wobbleA: 0.025, wobbleB: 0.015, droop: 0.35, armAngle: 0.7, armBend: -0.3, armSwing: 0.03, armPhase: 0, bounce: 0, squashBase: 1, breath: 0.03},
+    [Mood.IDLE]: {sx: 1.00, sy: 1.00, wobbleA: 0.035, wobbleB: 0.020, droop: 0.1, armAngle: 0.85, armBend: -0.4, armSwing: 0.08, armPhase: 0, bounce: 0, squashBase: 1, breath: 0.04},
+    [Mood.WORKING]: {sx: 1.00, sy: 1.00, wobbleA: 0.035, wobbleB: 0.020, droop: 0.1, armAngle: 1.0, armBend: -1.0, armSwing: 0.18, armPhase: 3.14, bounce: 0, squashBase: 1, breath: 0.04},
+    [Mood.ALERT]: {sx: 0.96, sy: 1.03, wobbleA: 0.042, wobbleB: 0.040, droop: 0.05, armAngle: 2.5, armBend: 0.3, armSwing: 0.35, armPhase: 0, bounce: 0.10, squashBase: 1, breath: 0},
+    [Mood.HAPPY]: {sx: 1.04, sy: 0.98, wobbleA: 0.050, wobbleB: 0.025, droop: 0.05, armAngle: 2.7, armBend: 0.2, armSwing: 0.2, armPhase: 0, bounce: 0.11, squashBase: 1, breath: 0},
+    [Mood.SAD]: {sx: 1.05, sy: 0.92, wobbleA: 0.025, wobbleB: 0.018, droop: 0.5, armAngle: 0.5, armBend: -0.6, armSwing: 0.03, armPhase: 0, bounce: 0, squashBase: 0.92, breath: 0.02},
 };
 
 const OUTLINE_POINTS = 48;
+
+// Speeds are fixed, not part of the shape: easing a speed would sweep the phase (speed x time) wildly.
+// Moods differ by amplitude, which eases smoothly.
+const OUTLINE_SPEED = 3;
+const ARM_SPEED = 9;
+const BOUNCE_SPEED = 7;
+const BREATH_SPEED = 1.8;
 
 /** The body's outline in unit coordinates: a circle, rippled by the mood's wobble and melted by its droop. */
 function bodyOutline(t, shape) {
     return Array.from({length: OUTLINE_POINTS}, (_, i) => {
         const a = (i / OUTLINE_POINTS) * 2 * Math.PI;
-        const wobble = 1 + shape.wobbleA * Math.sin(2 * a + t * shape.speed) +
-            shape.wobbleB * Math.sin(3 * a - t * shape.speed * 1.3);
+        const wobble = 1 + shape.wobbleA * Math.sin(2 * a + t * OUTLINE_SPEED) +
+            shape.wobbleB * Math.sin(3 * a - t * OUTLINE_SPEED * 1.3);
         let x = Math.sin(a) * wobble;
         let y = -Math.cos(a) * wobble;
         if (y > 0) {
@@ -66,7 +73,7 @@ const WAVE_LENGTH_S = 1.2;
  * blob also waves hello with its right arm now and then.
  */
 function armAngle(mood, t, shape, side) {
-    let angle = shape.armAngle + shape.armSwing * Math.sin(t * shape.armSpeed + (side > 0 ? shape.armPhase : 0));
+    let angle = shape.armAngle + shape.armSwing * Math.sin(t * ARM_SPEED + (side > 0 ? shape.armPhase : 0));
     if (mood === Mood.IDLE && side > 0 && t % WAVE_PERIOD_S < WAVE_LENGTH_S) {
         const lift = Math.sin(Math.PI * (t % WAVE_PERIOD_S) / WAVE_LENGTH_S);
         angle += (2.3 + 0.3 * Math.sin(t * 14) - angle) * lift;
@@ -74,20 +81,19 @@ function armAngle(mood, t, shape, side) {
     return angle;
 }
 
-/** One two-segment arm from the shoulder; `bend` turns the forearm further round at the elbow. */
+/** One arm: a short, fat, rounded stub from the shoulder, curved a little by `bend`. No joints, no hands. */
 function drawArm(cr, sx, sy, side, angle, bend, s) {
-    const upper = 0.11 * s;
-    const lower = 0.10 * s;
-    const ex = sx + side * Math.sin(angle) * upper;
-    const ey = sy + Math.cos(angle) * upper;
-    const hx = ex + side * Math.sin(angle + bend) * lower;
-    const hy = ey + Math.cos(angle + bend) * lower;
+    const length = 0.19 * s;
+    const dx = side * Math.sin(angle);
+    const dy = Math.cos(angle);
+    const hx = sx + dx * length;
+    const hy = sy + dy * length;
+    // Control point pushed sideways from the middle: the stub bows instead of kinking.
+    const bow = bend * 0.03 * s;
     cr.moveTo(sx, sy);
-    cr.lineTo(ex, ey);
-    cr.lineTo(hx, hy);
+    cr.curveTo(sx + dx * length * 0.4 - dy * bow, sy + dy * length * 0.4 + dx * bow,
+        sx + dx * length * 0.8 - dy * bow, sy + dy * length * 0.8 + dx * bow, hx, hy);
     cr.stroke();
-    cr.arc(hx, hy, 0.045 * s, 0, 2 * Math.PI);
-    cr.fill();
 }
 
 /**
@@ -104,21 +110,10 @@ export function paintMascot(cr, w, h, mood, ms, shape = SHAPES[mood] ?? SHAPES[M
     const t = ms / 1000;
     const cx = w / 2;
 
-    let lift = 0;
-    let squash = 1;
-    let look = 0;
-    switch (mood) {
-    case Mood.SLEEPY: squash = 1 + 0.03 * Math.sin(t * 1.2); break;
-    case Mood.IDLE: squash = 1 + 0.04 * Math.sin(t * 2); break;
-    case Mood.WORKING:
-        squash = 1 + 0.04 * Math.sin(t * 2);
-        look = Math.sin(t * 1.7) * 0.05 * s;
-        break;
-    case Mood.ALERT: lift = Math.abs(Math.sin(t * 8)) * 0.10 * s; break;
-    case Mood.HAPPY: lift = Math.abs(Math.sin(t * 6)) * 0.11 * s; break;
-    case Mood.SAD: squash = 0.92 + 0.02 * Math.sin(t * 1.5); break;
-    default: break;
-    }
+    // Bounce and breathing amplitudes come from the (eased) shape, so a change of mood fades them in and out.
+    const lift = Math.abs(Math.sin(t * BOUNCE_SPEED)) * shape.bounce * s;
+    const squash = shape.squashBase + shape.breath * Math.sin(t * BREATH_SPEED);
+    const look = mood === Mood.WORKING ? Math.sin(t * 1.7) * 0.05 * s : 0;
 
     const rx = 0.42 * s * shape.sx * (1 + (1 - squash) * 0.5);
     const ry = 0.36 * s * shape.sy * squash;
@@ -143,8 +138,8 @@ export function paintMascot(cr, w, h, mood, ms, shape = SHAPES[mood] ?? SHAPES[M
     cr.fill();
 
     // Arms go behind the body: their roots hide inside it, so only the reaching part shows.
-    cr.setSourceRGBA(r * 0.85, g * 0.85, b * 0.85, 1);
-    cr.setLineWidth(Math.max(1.4, 0.06 * s));
+    cr.setSourceRGBA(r, g, b, 1);
+    cr.setLineWidth(Math.max(2.5, 0.11 * s));
     cr.setLineCap(Cairo.LineCap.ROUND);
     for (const side of [-1, 1])
         drawArm(cr, cx + side * rx * 0.85, cy + 0.06 * s, side, armAngle(mood, t, shape, side), shape.armBend, s);
