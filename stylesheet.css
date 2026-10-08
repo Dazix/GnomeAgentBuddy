@@ -1,0 +1,156 @@
+/* The notch's background is drawn in code (lib/notchShape.js), so it can flow into a screen edge. */
+.ab-island {
+    color: #f2f2f2;
+}
+
+.ab-box {
+    min-width: 140px;
+}
+
+.ab-header {
+    padding: 4px 12px;
+    border-radius: 14px;
+}
+
+.ab-header:hover,
+.ab-header:focus {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.ab-attention {
+    background-color: rgba(255, 184, 77, 0.22);
+}
+
+.ab-title {
+    font-weight: bold;
+    margin-left: 8px;
+}
+
+.ab-badge {
+    background-color: #ffb84d;
+    color: #1a1200;
+    font-weight: bold;
+    border-radius: 9px;
+    padding: 0 7px;
+    margin-left: 8px;
+    text-align: center;
+}
+
+.ab-body {
+    min-width: 340px;
+    max-width: 440px;
+    padding-top: 6px;
+}
+
+.ab-card {
+    spacing: 6px;
+}
+
+.ab-caption,
+.ab-hint {
+    color: rgba(242, 242, 242, 0.6);
+    font-size: 0.85em;
+}
+
+.ab-text {
+    color: #f2f2f2;
+}
+
+.ab-mono {
+    font-family: monospace;
+}
+
+.ab-row {
+    spacing: 8px;
+    margin-top: 4px;
+}
+
+.ab-button {
+    border-radius: 10px;
+    padding: 6px 12px;
+    text-align: center;
+    background-color: rgba(255, 255, 255, 0.10);
+    color: #f2f2f2;
+}
+
+.ab-button:hover,
+.ab-button:focus {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+.ab-choices {
+    spacing: 4px;
+    margin-top: 4px;
+}
+
+.ab-choice {
+    text-align: left;
+    padding: 6px 10px;
+}
+
+.ab-choice-text {
+    text-align: left;
+}
+
+.ab-allow {
+    background-color: #26b873;
+    color: #04180e;
+    font-weight: bold;
+}
+
+.ab-allow:hover,
+.ab-allow:focus {
+    background-color: #35cf86;
+}
+
+.ab-allow:disabled,
+.ab-allow:insensitive {
+    background-color: rgba(255, 255, 255, 0.10);
+    color: rgba(242, 242, 242, 0.4);
+}
+
+.ab-deny {
+    background-color: rgba(219, 61, 51, 0.85);
+    color: #fff;
+}
+
+.ab-deny:hover,
+.ab-deny:focus {
+    background-color: #ec5247;
+}
+
+.ab-option:checked {
+    background-color: #ffb84d;
+    color: #1a1200;
+}
+
+.ab-question {
+    spacing: 4px;
+    margin-bottom: 6px;
+}
+
+.ab-session {
+    padding: 4px 0;
+}
+
+.ab-session-name {
+    font-weight: bold;
+}
+
+.ab-state {
+    margin-left: 8px;
+}
+
+.ab-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    margin-right: 8px;
+    background-color: #888;
+}
+
+.ab-dot-working { background-color: #26b873; }
+.ab-dot-waiting { background-color: #ffb84d; }
+.ab-dot-done { background-color: #5aa0ff; }
+.ab-dot-error { background-color: #db3d33; }
+.ab-dot-idle { background-color: #888; }

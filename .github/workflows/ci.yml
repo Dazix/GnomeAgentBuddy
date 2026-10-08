@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install gjs
+        run: sudo apt-get update && sudo apt-get install -y gjs libglib2.0-bin
+      - name: Validate GSettings schema
+        run: glib-compile-schemas --strict --dry-run schemas/
+      - name: Extension unit tests
+        run: gjs -m tests/run.js
+      - name: Relay unit tests
+        run: python3 -m unittest discover -s relay

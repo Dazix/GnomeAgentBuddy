@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.agentbuddy"
+          path="/org/gnome/shell/extensions/agentbuddy/">
+
+    <key name="scale" type="d">
+      <range min="0.75" max="1.75"/>
+      <default>1.0</default>
+      <summary>UI scale</summary>
+    </key>
+    <key name="background-opacity" type="d">
+      <range min="0.2" max="1.0"/>
+      <default>0.95</default>
+      <summary>Notch background opacity</summary>
+    </key>
+    <key name="hide-when-idle" type="b">
+      <default>true</default>
+      <summary>Hide the notch while no agent session is running</summary>
+    </key>
+    <key name="overlay-panel" type="b">
+      <default>false</default>
+      <summary>Cover the top bar instead of hanging below it</summary>
+    </key>
+    <key name="auto-open-requests" type="b">
+      <default>false</default>
+      <summary>Open the notch by itself when an agent asks for permission</summary>
+    </key>
+    <key name="monitor" type="s">
+      <default>''</default>
+      <summary>Connector of the monitor the notch lives on (empty: the primary monitor)</summary>
+    </key>
+    <key name="snap-threshold" type="i">
+      <range min="20" max="400"/>
+      <default>100</default>
+      <summary>Pixels from a screen edge where the notch docks to it</summary>
+    </key>
+    <key name="position-x" type="i">
+      <default>-1</default>
+      <summary>Horizontal centre of a notch the user moved, in screen pixels (-1: top centre)</summary>
+    </key>
+    <key name="position-y" type="i">
+      <default>-1</default>
+      <summary>Top edge of a notch the user moved, in screen pixels (-1: just under the panel)</summary>
+    </key>
+    <key name="enabled-agents" type="as">
+      <default>['claude', 'codex', 'gemini', 'copilot']</default>
+      <summary>Agents shown in the notch</summary>
+    </key>
+    <key name="decision-timeout" type="i">
+      <range min="10" max="110"/>
+      <default>100</default>
+      <summary>Seconds a permission card stays before it closes (the terminal keeps asking)</summary>
+    </key>
+    <key name="finished-linger" type="i">
+      <range min="5" max="600"/>
+      <default>60</default>
+      <summary>Seconds a finished session stays visible</summary>
+    </key>
+  </schema>
+</schemalist>

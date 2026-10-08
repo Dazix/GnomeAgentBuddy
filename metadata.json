@@ -1,0 +1,9 @@
+{
+  "name": "GnomeAgentBuddy",
+  "description": "A small blob in the notch that shows your AI coding agent sessions and lets you approve permissions and answer questions",
+  "uuid": "GnomeAgentBuddy",
+  "settings-schema": "org.gnome.shell.extensions.agentbuddy",
+  "shell-version": [
+    "50"
+  ]
+}
