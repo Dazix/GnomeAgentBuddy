@@ -20,12 +20,12 @@ const INK = [0.09, 0.11, 0.14];
  * widget can ease from one mood's shape to the next.
  */
 export const SHAPES = {
-    [Mood.SLEEPY]: {sx: 1.025, sy: 0.93, wobbleA: 0.025, wobbleB: 0.015, speed: 1.0, droop: 0.35},
-    [Mood.IDLE]: {sx: 1.00, sy: 1.00, wobbleA: 0.035, wobbleB: 0.020, speed: 2.0, droop: 0.1},
-    [Mood.WORKING]: {sx: 1.00, sy: 1.00, wobbleA: 0.035, wobbleB: 0.020, speed: 2.0, droop: 0.1},
-    [Mood.ALERT]: {sx: 0.96, sy: 1.03, wobbleA: 0.042, wobbleB: 0.040, speed: 6.0, droop: 0.05},
-    [Mood.HAPPY]: {sx: 1.04, sy: 0.98, wobbleA: 0.050, wobbleB: 0.025, speed: 4.5, droop: 0.05},
-    [Mood.SAD]: {sx: 1.05, sy: 0.92, wobbleA: 0.025, wobbleB: 0.018, speed: 1.2, droop: 0.5},
+    [Mood.SLEEPY]: {sx: 1.025, sy: 0.93, wobbleA: 0.025, wobbleB: 0.015, speed: 1.0, droop: 0.35, armAngle: 0.35, armBend: -0.3, armSwing: 0.03, armSpeed: 1.0, armPhase: 0},
+    [Mood.IDLE]: {sx: 1.00, sy: 1.00, wobbleA: 0.035, wobbleB: 0.020, speed: 2.0, droop: 0.1, armAngle: 0.55, armBend: -0.4, armSwing: 0.08, armSpeed: 2.0, armPhase: 0},
+    [Mood.WORKING]: {sx: 1.00, sy: 1.00, wobbleA: 0.035, wobbleB: 0.020, speed: 2.0, droop: 0.1, armAngle: 0.9, armBend: -1.2, armSwing: 0.25, armSpeed: 14.0, armPhase: 3.14},
+    [Mood.ALERT]: {sx: 0.96, sy: 1.03, wobbleA: 0.042, wobbleB: 0.040, speed: 6.0, droop: 0.05, armAngle: 2.5, armBend: 0.3, armSwing: 0.35, armSpeed: 12.0, armPhase: 0},
+    [Mood.HAPPY]: {sx: 1.04, sy: 0.98, wobbleA: 0.050, wobbleB: 0.025, speed: 4.5, droop: 0.05, armAngle: 2.7, armBend: 0.2, armSwing: 0.2, armSpeed: 9.0, armPhase: 0},
+    [Mood.SAD]: {sx: 1.05, sy: 0.92, wobbleA: 0.025, wobbleB: 0.018, speed: 1.2, droop: 0.5, armAngle: 0.15, armBend: -0.6, armSwing: 0.03, armSpeed: 1.2, armPhase: 0},
 };
 
 const OUTLINE_POINTS = 48;
@@ -55,6 +55,39 @@ function bodyPath(cr, cx, cy, rx, ry, outline) {
             cr.lineTo(cx + x * rx, cy + y * ry);
     });
     cr.closePath();
+}
+
+const WAVE_PERIOD_S = 9;
+const WAVE_LENGTH_S = 1.2;
+
+/**
+ * Shoulder angle of one arm, measured from straight down, outwards (pi/2 is
+ * horizontal, pi straight up). The mood sets the rest angle and a swing; an idle
+ * blob also waves hello with its right arm now and then.
+ */
+function armAngle(mood, t, shape, side) {
+    let angle = shape.armAngle + shape.armSwing * Math.sin(t * shape.armSpeed + (side > 0 ? shape.armPhase : 0));
+    if (mood === Mood.IDLE && side > 0 && t % WAVE_PERIOD_S < WAVE_LENGTH_S) {
+        const lift = Math.sin(Math.PI * (t % WAVE_PERIOD_S) / WAVE_LENGTH_S);
+        angle += (2.3 + 0.3 * Math.sin(t * 14) - angle) * lift;
+    }
+    return angle;
+}
+
+/** One two-segment arm from the shoulder; `bend` turns the forearm further round at the elbow. */
+function drawArm(cr, sx, sy, side, angle, bend, s) {
+    const upper = 0.11 * s;
+    const lower = 0.10 * s;
+    const ex = sx + side * Math.sin(angle) * upper;
+    const ey = sy + Math.cos(angle) * upper;
+    const hx = ex + side * Math.sin(angle + bend) * lower;
+    const hy = ey + Math.cos(angle + bend) * lower;
+    cr.moveTo(sx, sy);
+    cr.lineTo(ex, ey);
+    cr.lineTo(hx, hy);
+    cr.stroke();
+    cr.arc(hx, hy, 0.045 * s, 0, 2 * Math.PI);
+    cr.fill();
 }
 
 /**
@@ -108,6 +141,13 @@ export function paintMascot(cr, w, h, mood, ms, shape = SHAPES[mood] ?? SHAPES[M
     cr.restore();
     cr.setSourceRGBA(0, 0, 0, 0.28 * (1 - lift / s));
     cr.fill();
+
+    // Arms go behind the body: their roots hide inside it, so only the reaching part shows.
+    cr.setSourceRGBA(r * 0.85, g * 0.85, b * 0.85, 1);
+    cr.setLineWidth(Math.max(1.4, 0.06 * s));
+    cr.setLineCap(Cairo.LineCap.ROUND);
+    for (const side of [-1, 1])
+        drawArm(cr, cx + side * rx * 0.85, cy + 0.06 * s, side, armAngle(mood, t, shape, side), shape.armBend, s);
 
     // Body.
     bodyPath(cr, cx, cy, rx, ry, outline);

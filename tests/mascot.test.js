@@ -42,7 +42,8 @@ test('mascot: every mood has a complete shape', () => {
 test('mascot: no mood ever touches the edge of its box (nothing is clipped)', () => {
     for (const mood of Object.values(Mood)) {
         // Steps of 50 ms walk through every phase of the bounce and the wobble.
-        for (let ms = 0; ms < 3200; ms += 50)
+        // Long enough to catch the idle blob's hello wave, which comes every 9 s.
+        for (let ms = 0; ms < 10000; ms += 50)
             assertEqual(edgeAlpha(mood, ms, SHAPES[mood]), 0, `${mood} at ${ms} ms`);
     }
 });
