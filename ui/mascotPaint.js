@@ -22,7 +22,7 @@ const INK = [0.09, 0.11, 0.14];
 export const SHAPES = {
     [Mood.SLEEPY]: {sx: 1.025, sy: 0.93, wobbleA: 0.025, wobbleB: 0.015, speed: 1.0, droop: 0.35},
     [Mood.IDLE]: {sx: 1.00, sy: 1.00, wobbleA: 0.035, wobbleB: 0.020, speed: 2.0, droop: 0.1},
-    [Mood.WORKING]: {sx: 1.00, sy: 1.00, wobbleA: 0.045, wobbleB: 0.030, speed: 4.0, droop: 0.05},
+    [Mood.WORKING]: {sx: 1.00, sy: 1.00, wobbleA: 0.035, wobbleB: 0.020, speed: 2.0, droop: 0.1},
     [Mood.ALERT]: {sx: 0.96, sy: 1.03, wobbleA: 0.042, wobbleB: 0.040, speed: 6.0, droop: 0.05},
     [Mood.HAPPY]: {sx: 1.04, sy: 0.98, wobbleA: 0.050, wobbleB: 0.025, speed: 4.5, droop: 0.05},
     [Mood.SAD]: {sx: 1.05, sy: 0.92, wobbleA: 0.025, wobbleB: 0.018, speed: 1.2, droop: 0.5},
@@ -78,7 +78,7 @@ export function paintMascot(cr, w, h, mood, ms, shape = SHAPES[mood] ?? SHAPES[M
     case Mood.SLEEPY: squash = 1 + 0.03 * Math.sin(t * 1.2); break;
     case Mood.IDLE: squash = 1 + 0.04 * Math.sin(t * 2); break;
     case Mood.WORKING:
-        lift = Math.abs(Math.sin(t * 5)) * 0.10 * s;
+        squash = 1 + 0.04 * Math.sin(t * 2);
         look = Math.sin(t * 1.7) * 0.05 * s;
         break;
     case Mood.ALERT: lift = Math.abs(Math.sin(t * 8)) * 0.10 * s; break;

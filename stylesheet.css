@@ -166,3 +166,7 @@
 .ab-dot-done { background-color: #5aa0ff; }
 .ab-dot-error { background-color: #db3d33; }
 .ab-dot-idle { background-color: #888; }
+
+.ab-origin {
+    margin-left: 12px;
+}

@@ -264,7 +264,7 @@ export function buildSessionList(sessions, {compact = false} = {}) {
         // With a title the project moves next to the agent, so neither is lost.
         const origin = session.title && session.project
             ? `${agentLabel(session.agent)} · ${session.project}` : agentLabel(session.agent);
-        head.add_child(new St.Label({text: origin, style_class: 'ab-caption', y_align: Clutter.ActorAlign.CENTER}));
+        head.add_child(new St.Label({text: origin, style_class: 'ab-caption ab-origin', y_align: Clutter.ActorAlign.CENTER}));
         if (compact)
             head.add_child(new St.Label({text: STATE_WORD[session.state] ?? '', style_class: 'ab-caption ab-state',
                 y_align: Clutter.ActorAlign.CENTER}));
