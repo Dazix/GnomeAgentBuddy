@@ -13,7 +13,7 @@ import {Island} from './ui/island.js';
 const PRUNE_SECONDS = 5;
 
 /** Settings keys that change what the store accepts or how the notch looks. */
-const LIVE_KEYS = ['scale', 'background-opacity', 'hide-when-idle', 'overlay-panel', 'auto-open-requests',
+const LIVE_KEYS = ['scale', 'background-opacity', 'compact-height', 'hide-when-idle', 'overlay-panel', 'auto-open-requests',
     'monitor', 'position-x', 'position-y', 'snap-threshold',
     'enabled-agents', 'decision-timeout', 'finished-linger'];
 
@@ -41,6 +41,7 @@ export default class AgentBuddyExtension extends Extension {
 
         // Other chrome or a fullscreen window can end up above the notch: lift it back.
         this._restackedId = global.display.connect('restacked', () => this._raise());
+        this._raise();
 
         this._server = new RelayServer(this._store);
         try {
@@ -69,9 +70,10 @@ export default class AgentBuddyExtension extends Extension {
     }
 
     _raise() {
-        const {uiGroup} = Main.layoutManager;
-        if (this._island?.get_parent() === uiGroup)
-            uiGroup.set_child_above_sibling(this._island, null);
+        // Above the other chrome, but just below the modal dialogs (system dialogs stay on top).
+        const {uiGroup, modalDialogGroup} = Main.layoutManager;
+        if (this._island?.get_parent() === uiGroup && modalDialogGroup?.get_parent() === uiGroup)
+            uiGroup.set_child_below_sibling(this._island, modalDialogGroup);
     }
 
     disable() {

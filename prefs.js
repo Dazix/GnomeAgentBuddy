@@ -89,6 +89,9 @@ export default class AgentBuddyPreferences extends ExtensionPreferences {
         const look = new Adw.PreferencesGroup({title: 'Notch'});
         look.add(spinRow(settings, 'scale', {title: 'Size', lower: 0.75, upper: 1.75, step: 0.05, digits: 2}));
         look.add(spinRow(settings, 'background-opacity', {title: 'Opacity', lower: 0.2, upper: 1, step: 0.05, digits: 2}));
+        look.add(switchRow(settings, 'compact-height', {
+            title: 'Compact height', subtitle: 'Trim the vertical padding of the collapsed notch',
+        }));
         look.add(switchRow(settings, 'hide-when-idle', {
             title: 'Hide while idle', subtitle: 'Only show the notch while an agent session is running',
         }));

@@ -13,6 +13,10 @@
       <default>0.95</default>
       <summary>Notch background opacity</summary>
     </key>
+    <key name="compact-height" type="b">
+      <default>true</default>
+      <summary>Trim the vertical padding of the collapsed notch</summary>
+    </key>
     <key name="hide-when-idle" type="b">
       <default>true</default>
       <summary>Hide the notch while no agent session is running</summary>

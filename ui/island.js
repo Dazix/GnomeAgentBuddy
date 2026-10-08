@@ -13,7 +13,7 @@ import {agentLabel, buildRequestCard, buildSessionList} from './cards.js';
 
 const MASCOT_SIZE = 46;
 const FOLD_MS = 150;
-const PEEK_DELAY_MS = 250;
+const PEEK_DELAY_MS = 80;
 const MORPH_MS = 300;
 
 /**
@@ -31,7 +31,9 @@ class Island extends St.Widget {
         super._init({
             layout_manager: new Clutter.BinLayout(),
             style_class: 'ab-island', reactive: true, can_focus: true, track_hover: true, visible: false,
+            clip_to_allocation: true,
         });
+        this._shown = false;
         this._store = store;
         this._settings = settings;
         this._expanded = false;
@@ -122,10 +124,15 @@ class Island extends St.Widget {
         // The widget is the body plus a margin the flares live in; the content sits inside the body.
         this._metrics = notchMetrics(scale);
         const pad = this._metrics.margin;
-        this._box.set_style(`padding: ${pad + 6}px ${pad + 10}px;`);
+        const compact = this._settings.get_boolean('compact-height');
+        this._box.set_style(`padding: ${pad + (compact ? 2 : 6)}px ${pad + 10}px;`);
+        this._header.set_style(`padding: ${compact ? 2 : 4}px 12px;`);
         this._bg.queue_repaint();
         this._reposition();
-        this.opacity = Math.round(this._settings.get_double('background-opacity') * 255);
+        if (this._shown) {
+            this.remove_transition('opacity');
+            this.opacity = this._targetOpacity();
+        }
         this.refresh();
     }
 
@@ -310,12 +317,59 @@ class Island extends St.Widget {
         const idle = !store.sessions.size && !request;
         const hidden = idle && !this._expanded && this._settings.get_boolean('hide-when-idle');
         if (hidden) {
-            this.visible = false;
+            this._fade(false);
             return;
         }
-        this.visible = true;
-        this._renderBody(request);
+        this._fade(true);
+        this._resizeAround(() => this._renderBody(request));
         this._reposition();
+    }
+
+    _targetOpacity() {
+        return Math.round(this._settings.get_double('background-opacity') * 255);
+    }
+
+    /** Fade the whole notch in or out; it is only `visible` while it is (becoming) shown. */
+    _fade(show) {
+        if (show === this._shown)
+            return;
+        this._shown = show;
+        this.remove_transition('opacity');
+        if (show) {
+            if (!this.visible)
+                this.opacity = 0;
+            this.visible = true;
+            this.ease({opacity: this._targetOpacity(), duration: FOLD_MS, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+        } else {
+            this.ease({
+                opacity: 0, duration: FOLD_MS, mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                onComplete: () => {
+                    if (!this._shown)
+                        this.visible = false;
+                },
+            });
+        }
+    }
+
+    /** Run `change`, then grow or shrink from the old size to the new one (width and height). */
+    _resizeAround(change) {
+        this.remove_transition('width');
+        this.remove_transition('height');
+        const [width, height] = this.get_size();
+        const animate = this.visible && this._shown && !this._drag && width > 0;
+        this.set_size(-1, -1);
+        change();
+        if (!animate)
+            return;
+        const [, , newWidth, newHeight] = this.get_preferred_size();
+        if (Math.round(newWidth) === width && Math.round(newHeight) === height)
+            return;
+        this.set_size(width, height);
+        this.ease({
+            width: newWidth, height: newHeight, duration: FOLD_MS + 50,
+            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+            onComplete: () => this.set_size(-1, -1),
+        });
     }
 
     _titleFor(mood, request) {
@@ -423,7 +477,9 @@ class Island extends St.Widget {
         if (animate) {
             this.ease({x: x - m, y: y - m, duration: MORPH_MS, mode: Clutter.AnimationMode.EASE_OUT_CUBIC});
         } else {
-            this.remove_all_transitions();
+            // Only the position: a running fade or resize must go on.
+            this.remove_transition('x');
+            this.remove_transition('y');
             this.set_position(x - m, y - m);
         }
     }
