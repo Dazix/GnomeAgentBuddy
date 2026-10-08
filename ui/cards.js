@@ -244,11 +244,32 @@ const STATE_WORD = {
     [State.IDLE]: 'idle',
 };
 
+const DIFF_CLASS = {'+': 'ab-diff-add', '-': 'ab-diff-del', '@': 'ab-diff-gap', ' ': 'ab-diff-ctx'};
+/** Edits shown with their lines, newest first; older ones only as a heading. */
+const DIFF_EXPANDED = 3;
+
+/** The edits of a session: `file +N −M`, and the changed lines for the newest few. */
+function buildDiffView(edits) {
+    const view = new St.BoxLayout({vertical: true, style_class: 'ab-diff'});
+    [...edits].reverse().forEach((edit, index) => {
+        view.add_child(label(`${displayText(edit.file)}  +${edit.added} −${edit.removed}`, 'ab-diff-file'));
+        if (index >= DIFF_EXPANDED)
+            return;
+        for (const line of edit.lines) {
+            const text = line.op === '@' ? line.text : `${line.op} ${line.text}`;
+            view.add_child(label(text, `ab-mono ${DIFF_CLASS[line.op]}`));
+        }
+        if (edit.truncated)
+            view.add_child(label('… diff cut', 'ab-hint'));
+    });
+    return view;
+}
+
 /**
  * The session list: one row per session, waiting first. `compact` is the hover
  * peek: a single line per session (state, project, agent), no step text.
  */
-export function buildSessionList(sessions, {compact = false} = {}) {
+export function buildSessionList(sessions, {compact = false, openDiff = null, onToggleDiff = null} = {}) {
     const list = new St.BoxLayout({vertical: true, style_class: 'ab-card ab-sessions'});
     if (!sessions.length) {
         list.add_child(label('No agent is running.', 'ab-hint'));
@@ -279,6 +300,15 @@ export function buildSessionList(sessions, {compact = false} = {}) {
             : session.steps[session.steps.length - 1] ?? session.prompt;
         if (last)
             row.add_child(label(last, 'ab-hint'));
+        if (session.edits.length && onToggleDiff) {
+            const open = openDiff === session.key;
+            const toggle = new St.Button({style_class: 'ab-diff-toggle', can_focus: true, x_align: Clutter.ActorAlign.START,
+                label: open ? 'Hide changes' : `Show changes (${session.edits.length})`});
+            toggle.connect('clicked', () => onToggleDiff(session.key));
+            row.add_child(toggle);
+            if (open)
+                row.add_child(buildDiffView(session.edits));
+        }
         list.add_child(row);
     }
     if (compact && sessions.length > PEEK_LIMIT)

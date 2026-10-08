@@ -3,7 +3,11 @@
  * permission requests. Pure logic (no GNOME imports) so it is unit-tested with gjs.
  */
 
+import {editFromTool} from './editDiff.js';
+
 export const MAX_STEPS = 6;
+/** Finished edits kept per session for the diff view. */
+export const MAX_EDITS = 10;
 const DEFAULT_AGENT = 'claude';
 
 /** Agents whose permission requests the island can answer (relay `takes_decisions`). */
@@ -201,7 +205,7 @@ export class SessionStore {
         if (!session) {
             session = {
                 key, agent, id, cwd: payload.cwd ?? '', project: basename(payload.cwd),
-                state: State.IDLE, steps: [], prompt: '', summary: '', startedAt: now, updatedAt: now,
+                state: State.IDLE, steps: [], edits: [], prompt: '', summary: '', startedAt: now, updatedAt: now,
                 title: '', transcriptPath: '', titleCheckedAt: 0,
             };
             this.sessions.set(key, session);
@@ -231,6 +235,8 @@ export class SessionStore {
             this._pushStep(session, summarizeTool(payload.tool_name, payload.tool_input));
             break;
         case 'PostToolUse':
+            this._recordEdit(session, payload);
+        // fall through
         case 'PostToolUseFailure':
             // The agent went on: whatever was pending was answered elsewhere (terminal).
             this._clearPending(key, null);
@@ -319,6 +325,24 @@ export class SessionStore {
         if (!input || typeof input !== 'object')
             return '';
         return String(input.command ?? input.file_path ?? input.url ?? input.pattern ?? '');
+    }
+
+    /** A finished file edit: keep its diff and put `+N −M` on its ticker line. */
+    _recordEdit(session, payload) {
+        const edit = editFromTool(payload.tool_name, payload.tool_input);
+        if (!edit)
+            return;
+        edit.truncated = edit.truncated || payload.agentbuddy_diff_truncated === true;
+        session.edits.push(edit);
+        if (session.edits.length > MAX_EDITS)
+            session.edits.splice(0, session.edits.length - MAX_EDITS);
+
+        const step = `${summarizeTool(payload.tool_name, payload.tool_input)} +${edit.added} −${edit.removed}`;
+        const started = summarizeTool(payload.tool_name, payload.tool_input);
+        if (session.steps[session.steps.length - 1] === started)
+            session.steps[session.steps.length - 1] = step;
+        else
+            this._pushStep(session, step);
     }
 
     _pushStep(session, step) {

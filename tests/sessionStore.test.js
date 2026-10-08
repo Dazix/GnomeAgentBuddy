@@ -1,4 +1,4 @@
-import {Mood, SessionStore, State, MAX_STEPS, describeInput, displayText, parseQuestion, suggestionOptions, summarizeTool} from '../model/sessionStore.js';
+import {Mood, SessionStore, State, MAX_STEPS, MAX_EDITS, describeInput, displayText, parseQuestion, suggestionOptions, summarizeTool} from '../model/sessionStore.js';
 import {assertEqual, assertTrue, test} from './harness.js';
 
 function makeStore() {
@@ -256,4 +256,31 @@ test('onChange fires for every folded event', () => {
     store.handleEvent(ev('SessionStart'));
     store.handleEvent(ev('UserPromptSubmit'));
     assertEqual(count, 2);
+});
+
+test('PostToolUse of an Edit: the last step gets +N −M and the diff is kept', () => {
+    const {store} = makeStore();
+    const input = {file_path: '/p/a.js', old_string: 'x', new_string: 'x\ny'};
+    store.handleEvent(ev('PreToolUse', {tool_name: 'Edit', tool_input: {file_path: '/p/a.js'}}));
+    store.handleEvent(ev('PostToolUse', {tool_name: 'Edit', tool_input: input}));
+    const s = store.list()[0];
+    assertEqual(s.steps[s.steps.length - 1], 'Edit · a.js +1 −0');
+    assertEqual(s.edits.length, 1);
+    assertEqual(s.edits[0].file, 'a.js');
+});
+
+test('edits: only the newest ones are kept, and non-edits add none', () => {
+    const {store} = makeStore();
+    for (let i = 0; i < MAX_EDITS + 3; i++)
+        store.handleEvent(ev('PostToolUse', {tool_name: 'Write', tool_input: {file_path: `/p/f${i}.js`, content: 'a'}}));
+    store.handleEvent(ev('PostToolUse', {tool_name: 'Bash', tool_input: {command: 'ls'}}));
+    const s = store.list()[0];
+    assertEqual(s.edits.length, MAX_EDITS);
+    assertEqual(s.edits[s.edits.length - 1].file, `f${MAX_EDITS + 2}.js`);
+});
+
+test('PostToolUse of an Edit without a matching step still shows the change', () => {
+    const {store} = makeStore();
+    store.handleEvent(ev('PostToolUse', {tool_name: 'Write', tool_input: {file_path: '/p/n.txt', content: 'a\nb'}}));
+    assertEqual(store.list()[0].steps.pop(), 'Write · n.txt +2 −0');
 });

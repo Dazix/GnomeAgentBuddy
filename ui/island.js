@@ -37,6 +37,7 @@ class Island extends St.Widget {
         this._store = store;
         this._settings = settings;
         this._expanded = false;
+        this._diffKey = null;
         this._lastRequestId = 0;
         this._content = null;
 
@@ -287,6 +288,7 @@ class Island extends St.Widget {
 
     fold() {
         this._expanded = false;
+        this._diffKey = null;
         this.refresh();
     }
 
@@ -407,7 +409,14 @@ class Island extends St.Widget {
         else if (request)
             this._content = buildRequestCard(request, decision => this._store.resolve(request.id, decision));
         else
-            this._content = buildSessionList(this._store.list());
+            this._content = buildSessionList(this._store.list(), {
+                openDiff: this._diffKey,
+                onToggleDiff: key => {
+                    this._diffKey = this._diffKey === key ? null : key;
+                    this._resizeAround(() => this._renderBody(this._store.current));
+                    this._reposition();
+                },
+            });
         this._body.add_child(this._content);
         if (!this._body.visible) {
             this._body.visible = true;

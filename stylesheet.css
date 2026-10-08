@@ -170,3 +170,37 @@
 .ab-origin {
     margin-left: 12px;
 }
+
+.ab-diff {
+    spacing: 1px;
+    margin-top: 4px;
+}
+
+.ab-diff-toggle {
+    color: rgba(242, 242, 242, 0.6);
+    font-size: 0.85em;
+    padding: 2px 0;
+}
+
+.ab-diff-toggle:hover {
+    color: #f2f2f2;
+}
+
+.ab-diff-file {
+    color: #f2f2f2;
+    font-weight: bold;
+    margin-top: 4px;
+}
+
+.ab-diff-add {
+    color: #8fd18f;
+}
+
+.ab-diff-del {
+    color: #f08a8a;
+}
+
+.ab-diff-ctx,
+.ab-diff-gap {
+    color: rgba(242, 242, 242, 0.45);
+}
