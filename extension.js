@@ -6,6 +6,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {installRelay} from './lib/configFile.js';
 import {RelayServer} from './lib/relayServer.js';
 import {readTitle} from './lib/transcriptTitle.js';
+import {focusSessionWindow} from './lib/windowFocus.js';
 import {SessionStore} from './model/sessionStore.js';
 import {Island} from './ui/island.js';
 
@@ -33,9 +34,10 @@ export default class AgentBuddyExtension extends Extension {
 
         this._store = new SessionStore();
         this._store.resolveTitle = readTitle;
+        this._store.isAlive = pid => GLib.file_test(`/proc/${pid}`, GLib.FileTest.EXISTS);
         this._applyStoreSettings();
 
-        this._island = new Island(this._store, this._settings, () => this.openPreferences());
+        this._island = new Island(this._store, this._settings, () => this.openPreferences(), focusSessionWindow);
         Main.layoutManager.addChrome(this._island, {trackFullscreen: false});
         this._store.onChange(() => this._island?.refresh());
 

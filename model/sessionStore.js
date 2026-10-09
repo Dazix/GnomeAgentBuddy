@@ -3,7 +3,12 @@
  * permission requests. Pure logic (no GNOME imports) so it is unit-tested with gjs.
  */
 
+import {cleanPids} from '../lib/windowMatch.js';
+import {editFromTool} from './editDiff.js';
+
 export const MAX_STEPS = 6;
+/** Finished edits kept per session for the diff view. */
+export const MAX_EDITS = 10;
 const DEFAULT_AGENT = 'claude';
 
 /** Agents whose permission requests the island can answer (relay `takes_decisions`). */
@@ -143,7 +148,7 @@ export class SessionStore {
      * @param {object} [options]
      * @param {() => number} [options.now] clock in ms
      * @param {number} [options.decisionTimeout] seconds a request may wait
-     * @param {number} [options.finishedLinger] seconds a finished session stays
+     * @param {number} [options.finishedLinger] seconds a finished session keeps its done/error state before settling to idle
      */
     constructor({now = () => Date.now(), decisionTimeout = 100, finishedLinger = 60} = {}) {
         this._now = now;
@@ -153,6 +158,8 @@ export class SessionStore {
         this.isEnabled = () => true;
         /** Looks a session's title up from its transcript: `(path) => Promise<string|null>`. */
         this.resolveTitle = null;
+        /** Whether a process still runs: `(pid) => boolean`. Without it no session is marked dead. */
+        this.isAlive = null;
         /** @type {Map<string, object>} */
         this.sessions = new Map();
         /** @type {object[]} pending requests, oldest first */
@@ -201,12 +208,16 @@ export class SessionStore {
         if (!session) {
             session = {
                 key, agent, id, cwd: payload.cwd ?? '', project: basename(payload.cwd),
-                state: State.IDLE, steps: [], prompt: '', summary: '', startedAt: now, updatedAt: now,
-                title: '', transcriptPath: '', titleCheckedAt: 0,
+                state: State.IDLE, steps: [], edits: [], pids: [], prompt: '', summary: '', startedAt: now, updatedAt: now,
+                title: '', transcriptPath: '', titleCheckedAt: 0, dead: false,
             };
             this.sessions.set(key, session);
         }
         session.updatedAt = now;
+        session.dead = false;
+        const pids = cleanPids(payload.agentbuddy_pids);
+        if (pids.length)
+            session.pids = pids;
         if (typeof payload.transcript_path === 'string')
             session.transcriptPath = payload.transcript_path;
         this._refreshTitle(session, event, now);
@@ -231,6 +242,8 @@ export class SessionStore {
             this._pushStep(session, summarizeTool(payload.tool_name, payload.tool_input));
             break;
         case 'PostToolUse':
+            this._recordEdit(session, payload);
+        // fall through
         case 'PostToolUseFailure':
             // The agent went on: whatever was pending was answered elsewhere (terminal).
             this._clearPending(key, null);
@@ -321,6 +334,24 @@ export class SessionStore {
         return String(input.command ?? input.file_path ?? input.url ?? input.pattern ?? '');
     }
 
+    /** A finished file edit: keep its diff and put `+N −M` on its ticker line. */
+    _recordEdit(session, payload) {
+        const edit = editFromTool(payload.tool_name, payload.tool_input);
+        if (!edit)
+            return;
+        edit.truncated = edit.truncated || payload.agentbuddy_diff_truncated === true;
+        session.edits.push(edit);
+        if (session.edits.length > MAX_EDITS)
+            session.edits.splice(0, session.edits.length - MAX_EDITS);
+
+        const step = `${summarizeTool(payload.tool_name, payload.tool_input)} +${edit.added} −${edit.removed}`;
+        const started = summarizeTool(payload.tool_name, payload.tool_input);
+        if (session.steps[session.steps.length - 1] === started)
+            session.steps[session.steps.length - 1] = step;
+        else
+            this._pushStep(session, step);
+    }
+
     _pushStep(session, step) {
         session.steps.push(step);
         if (session.steps.length > MAX_STEPS)
@@ -383,11 +414,21 @@ export class SessionStore {
                 changed = true;
             }
         }
-        for (const [key, session] of this.sessions) {
+        // A session lives until SessionEnd or until the user removes it; a finished one
+        // only settles to idle, and one whose process is gone is marked dead.
+        for (const session of this.sessions.values()) {
+            if (!session.dead && this._processGone(session)) {
+                session.dead = true;
+                session.state = State.IDLE;
+                this._clearPending(session.key, null);
+                changed = true;
+            }
+            if (session.dead)
+                continue;
             const idleFor = (now - session.updatedAt) / 1000;
             const finished = session.state === State.DONE || session.state === State.ERROR;
-            if ((finished && idleFor > this.finishedLinger) || idleFor > 6 * 3600) {
-                this._dropSession(key);
+            if (finished && idleFor > this.finishedLinger) {
+                session.state = State.IDLE;
                 changed = true;
             }
         }
@@ -396,9 +437,28 @@ export class SessionStore {
         return changed;
     }
 
-    /** Sessions, waiting first, then working, then the most recently active. */
+    /**
+     * The agent is the relay's nearest parent, or the one behind a `sh -c` wrapper, so
+     * the session is gone only when neither of the two nearest processes runs. Farther
+     * ones (shell, terminal) outlive the agent and say nothing.
+     */
+    _processGone(session) {
+        if (!this.isAlive || !session.pids.length)
+            return false;
+        return !session.pids.slice(0, 2).some(pid => this.isAlive(pid));
+    }
+
+    /** Drop a session the user dismissed from the list. */
+    removeSession(key) {
+        if (!this.sessions.has(key))
+            return;
+        this._dropSession(key);
+        this._changed();
+    }
+
+    /** Sessions, waiting first, then working, then the most recently active, dead ones last. */
     list() {
-        const rank = s => (s.state === State.WAITING ? 0 : s.state === State.WORKING ? 1 : 2);
+        const rank = s => (s.dead ? 3 : s.state === State.WAITING ? 0 : s.state === State.WORKING ? 1 : 2);
         return [...this.sessions.values()].sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt);
     }
 
@@ -412,7 +472,8 @@ export class SessionStore {
         const now = this._now();
         if (this.pending.length)
             return Mood.ALERT;
-        const states = [...this.sessions.values()].map(s => s.state);
+        const live = [...this.sessions.values()].filter(s => !s.dead);
+        const states = live.map(s => s.state);
         if (states.includes(State.WORKING))
             return Mood.WORKING;
         if (now - this._lastErrorAt < 8000 && this._lastErrorAt)

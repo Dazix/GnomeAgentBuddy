@@ -27,7 +27,7 @@ class Island extends St.Widget {
      * @param {import('../model/sessionStore.js').SessionStore} store
      * @param {import('gi://Gio').Settings} settings
      */
-    _init(store, settings, onOpenPrefs = () => {}) {
+    _init(store, settings, onOpenPrefs = () => {}, onJump = () => false) {
         super._init({
             layout_manager: new Clutter.BinLayout(),
             style_class: 'ab-island', reactive: true, can_focus: true, track_hover: true, visible: false,
@@ -37,6 +37,8 @@ class Island extends St.Widget {
         this._store = store;
         this._settings = settings;
         this._expanded = false;
+        this._diffKey = null;
+        this._onJump = onJump;
         this._lastRequestId = 0;
         this._content = null;
 
@@ -125,8 +127,8 @@ class Island extends St.Widget {
         this._metrics = notchMetrics(scale);
         const pad = this._metrics.margin;
         const compact = this._settings.get_boolean('compact-height');
-        this._box.set_style(`padding: ${pad + (compact ? 2 : 6)}px ${pad + 10}px;`);
-        this._header.set_style(`padding: ${compact ? 2 : 4}px 12px;`);
+        this._box.set_style(`padding: ${pad + (compact ? 4 : 6)}px ${pad + 10}px;`);
+        this._header.set_style(`padding: ${compact ? 0 : 4}px 12px;`);
         this._bg.queue_repaint();
         this._reposition();
         if (this._shown) {
@@ -287,6 +289,7 @@ class Island extends St.Widget {
 
     fold() {
         this._expanded = false;
+        this._diffKey = null;
         this.refresh();
     }
 
@@ -386,6 +389,12 @@ class Island extends St.Widget {
         }
     }
 
+    /** Bring the session's terminal forward and fold the notch when that worked. */
+    _jumpTo(session) {
+        if (session && this._onJump(session))
+            this.fold();
+    }
+
     _renderBody(request) {
         const peeking = !this._expanded && this._peek;
         if (!this._expanded && !peeking) {
@@ -405,9 +414,21 @@ class Island extends St.Widget {
         if (!this._expanded)
             this._content = buildSessionList(this._store.list(), {compact: true});
         else if (request)
-            this._content = buildRequestCard(request, decision => this._store.resolve(request.id, decision));
+            this._content = buildRequestCard(request, decision => this._store.resolve(request.id, decision), {
+                onJump: this._store.sessions.get(request.sessionKey)?.pids.length
+                    ? () => this._jumpTo(this._store.sessions.get(request.sessionKey)) : null,
+            });
         else
-            this._content = buildSessionList(this._store.list());
+            this._content = buildSessionList(this._store.list(), {
+                onJump: session => this._jumpTo(session),
+                onRemove: key => this._store.removeSession(key),
+                openDiff: this._diffKey,
+                onToggleDiff: key => {
+                    this._diffKey = this._diffKey === key ? null : key;
+                    this._resizeAround(() => this._renderBody(this._store.current));
+                    this._reposition();
+                },
+            });
         this._body.add_child(this._content);
         if (!this._body.visible) {
             this._body.visible = true;

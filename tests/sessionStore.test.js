@@ -1,4 +1,4 @@
-import {Mood, SessionStore, State, MAX_STEPS, describeInput, displayText, parseQuestion, suggestionOptions, summarizeTool} from '../model/sessionStore.js';
+import {Mood, SessionStore, State, MAX_STEPS, MAX_EDITS, describeInput, displayText, parseQuestion, suggestionOptions, summarizeTool} from '../model/sessionStore.js';
 import {assertEqual, assertTrue, test} from './harness.js';
 
 function makeStore() {
@@ -222,8 +222,33 @@ test('stop: done session is happy, lingers, then goes away', () => {
     assertEqual(store.mood(), Mood.IDLE);
     clock.t += 55_000;
     store.prune();
+    assertEqual(store.sessions.size, 1);
+    assertEqual(store.list()[0].state, State.IDLE);
+    clock.t += 24 * 3600_000;
+    store.prune();
+    assertEqual(store.sessions.size, 1);
+    assertEqual(store.mood(), Mood.IDLE);
+});
+
+test('prune: a session whose nearest processes are gone is marked dead, kept, and revives on an event', () => {
+    const {store} = makeStore();
+    const alive = new Set([10, 20, 99]);
+    store.isAlive = pid => alive.has(pid);
+    store.handleEvent(ev('UserPromptSubmit', {agentbuddy_pids: [10, 20, 99]}));
+    assertEqual(store.prune(), false);
+    alive.delete(10);
+    assertEqual(store.prune(), false);
+    alive.delete(20);
+    assertEqual(store.prune(), true);
+    assertEqual(store.list()[0].dead, true);
+    assertEqual(store.list()[0].state, State.IDLE);
+    assertEqual(store.sessions.size, 1);
+    store.handleEvent(ev('PreToolUse', {tool_name: 'Bash'}));
+    assertEqual(store.list()[0].dead, false);
+    store.prune();
+    assertEqual(store.list()[0].dead, true);
+    store.removeSession(store.list()[0].key);
     assertEqual(store.sessions.size, 0);
-    assertEqual(store.mood(), Mood.SLEEPY);
 });
 
 test('stop failure is sad; session end removes the session and releases requests', () => {
@@ -256,4 +281,38 @@ test('onChange fires for every folded event', () => {
     store.handleEvent(ev('SessionStart'));
     store.handleEvent(ev('UserPromptSubmit'));
     assertEqual(count, 2);
+});
+
+test('PostToolUse of an Edit: the last step gets +N −M and the diff is kept', () => {
+    const {store} = makeStore();
+    const input = {file_path: '/p/a.js', old_string: 'x', new_string: 'x\ny'};
+    store.handleEvent(ev('PreToolUse', {tool_name: 'Edit', tool_input: {file_path: '/p/a.js'}}));
+    store.handleEvent(ev('PostToolUse', {tool_name: 'Edit', tool_input: input}));
+    const s = store.list()[0];
+    assertEqual(s.steps[s.steps.length - 1], 'Edit · a.js +1 −0');
+    assertEqual(s.edits.length, 1);
+    assertEqual(s.edits[0].file, 'a.js');
+});
+
+test('edits: only the newest ones are kept, and non-edits add none', () => {
+    const {store} = makeStore();
+    for (let i = 0; i < MAX_EDITS + 3; i++)
+        store.handleEvent(ev('PostToolUse', {tool_name: 'Write', tool_input: {file_path: `/p/f${i}.js`, content: 'a'}}));
+    store.handleEvent(ev('PostToolUse', {tool_name: 'Bash', tool_input: {command: 'ls'}}));
+    const s = store.list()[0];
+    assertEqual(s.edits.length, MAX_EDITS);
+    assertEqual(s.edits[s.edits.length - 1].file, `f${MAX_EDITS + 2}.js`);
+});
+
+test('PostToolUse of an Edit without a matching step still shows the change', () => {
+    const {store} = makeStore();
+    store.handleEvent(ev('PostToolUse', {tool_name: 'Write', tool_input: {file_path: '/p/n.txt', content: 'a\nb'}}));
+    assertEqual(store.list()[0].steps.pop(), 'Write · n.txt +2 −0');
+});
+
+test('the relay process chain is kept (cleaned) and survives events without one', () => {
+    const {store} = makeStore();
+    store.handleEvent(ev('SessionStart', {agentbuddy_pids: [30, 20, 'x', -3]}));
+    store.handleEvent(ev('PreToolUse', {tool_name: 'Bash', tool_input: {command: 'ls'}}));
+    assertEqual(store.list()[0].pids, [30, 20]);
 });

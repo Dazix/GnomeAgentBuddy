@@ -291,5 +291,30 @@ class Transport(unittest.TestCase):
             self.assertIsNone(hook.socket_path(lambda _: directory))
 
 
+class AncestorsTest(unittest.TestCase):
+    def test_walks_up_to_init(self):
+        parents = {500: 400, 400: 300, 300: 1}
+        self.assertEqual(hook.ancestors_from(500, parents.get), [500, 400, 300])
+
+    def test_stops_at_an_unknown_process_and_at_a_loop(self):
+        self.assertEqual(hook.ancestors_from(500, {500: 400}.get), [500, 400])
+        self.assertEqual(hook.ancestors_from(7, {7: 8, 8: 7}.get), [7, 8])
+
+    def test_is_bounded(self):
+        parents = {pid: pid - 1 for pid in range(2, 1000)}
+        self.assertEqual(len(hook.ancestors_from(900, parents.get)), hook.MAX_ANCESTORS)
+
+    def test_parent_from_stat_survives_odd_names(self):
+        self.assertEqual(hook.parent_from_stat("42 (my) app) S 7 42 42 0"), 7)
+        self.assertIsNone(hook.parent_from_stat("garbage"))
+
+    def test_prepare_forwards_the_chain(self):
+        raw = b'{"hook_event_name":"Stop","session_id":"s"}'
+        line, _, _, _ = hook.prepare(raw, "", "", no_env, "/", ancestors=[5, 4])
+        self.assertEqual(json.loads(line)["agentbuddy_pids"], [5, 4])
+        line, _, _, _ = hook.prepare(raw, "", "", no_env, "/")
+        self.assertNotIn("agentbuddy_pids", json.loads(line))
+
+
 if __name__ == "__main__":
     unittest.main()
