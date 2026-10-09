@@ -27,7 +27,7 @@ class Island extends St.Widget {
      * @param {import('../model/sessionStore.js').SessionStore} store
      * @param {import('gi://Gio').Settings} settings
      */
-    _init(store, settings, onOpenPrefs = () => {}) {
+    _init(store, settings, onOpenPrefs = () => {}, onJump = () => false) {
         super._init({
             layout_manager: new Clutter.BinLayout(),
             style_class: 'ab-island', reactive: true, can_focus: true, track_hover: true, visible: false,
@@ -38,6 +38,7 @@ class Island extends St.Widget {
         this._settings = settings;
         this._expanded = false;
         this._diffKey = null;
+        this._onJump = onJump;
         this._lastRequestId = 0;
         this._content = null;
 
@@ -388,6 +389,12 @@ class Island extends St.Widget {
         }
     }
 
+    /** Bring the session's terminal forward and fold the notch when that worked. */
+    _jumpTo(session) {
+        if (session && this._onJump(session))
+            this.fold();
+    }
+
     _renderBody(request) {
         const peeking = !this._expanded && this._peek;
         if (!this._expanded && !peeking) {
@@ -407,9 +414,14 @@ class Island extends St.Widget {
         if (!this._expanded)
             this._content = buildSessionList(this._store.list(), {compact: true});
         else if (request)
-            this._content = buildRequestCard(request, decision => this._store.resolve(request.id, decision));
+            this._content = buildRequestCard(request, decision => this._store.resolve(request.id, decision), {
+                onJump: this._store.sessions.get(request.sessionKey)?.pids.length
+                    ? () => this._jumpTo(this._store.sessions.get(request.sessionKey)) : null,
+            });
         else
             this._content = buildSessionList(this._store.list(), {
+                onJump: session => this._jumpTo(session),
+                onRemove: key => this._store.removeSession(key),
                 openDiff: this._diffKey,
                 onToggleDiff: key => {
                     this._diffKey = this._diffKey === key ? null : key;

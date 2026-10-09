@@ -26,6 +26,9 @@ function button(text, styleClass, onClick) {
     return actor;
 }
 
+/** Tools whose input is a plan to read, not something the card can show or approve. */
+const PLAN_TOOLS = ['ExitPlanMode'];
+
 /** How long a new card ignores clicks and keys, so a card that replaces another under the pointer cannot be answered by accident. */
 const ARM_MS = 400;
 
@@ -124,7 +127,7 @@ function addCountdown(card, request) {
  * @param {object} request pending request from the SessionStore
  * @param {(decision: string) => void} onDecision
  */
-export function buildRequestCard(request, onDecision) {
+export function buildRequestCard(request, onDecision, {onJump = null} = {}) {
     const card = new St.BoxLayout({vertical: true, style_class: 'ab-card ab-request'});
     const arming = makeArming(card);
     const title = request.project ? `${agentLabel(request.agent)} · ${request.project}` : agentLabel(request.agent);
@@ -176,29 +179,39 @@ export function buildRequestCard(request, onDecision) {
     // written out (model/sessionStore.js describeInput). It scrolls instead of being ellipsized,
     // because a command whose end is hidden is a command nobody has really read.
     card.add_child(label(`Tool: ${displayText(request.tool) || 'unknown'}`, 'ab-caption'));
-    const inner = new St.BoxLayout({vertical: true});
-    inner.add_child(label(request.display || request.summary, 'ab-text ab-mono', {lines: 1000, ellipsize: false}));
-    const scroll = new St.ScrollView({
-        style_class: 'ab-command', hscrollbar_policy: St.PolicyType.NEVER,
-        vscrollbar_policy: St.PolicyType.AUTOMATIC, overlay_scrollbars: true,
-    });
-    scroll.set_child(inner);
-    card.add_child(scroll);
+    // A plan is read in the terminal: the card only points there, and cannot approve it.
+    const isPlan = PLAN_TOOLS.includes(request.tool);
+    if (isPlan) {
+        card.add_child(label('The plan is shown in the terminal.', 'ab-hint'));
+        if (onJump) {
+            const jump = button('Go to terminal', '', onJump);
+            card.add_child(jump);
+        }
+    } else {
+        const inner = new St.BoxLayout({vertical: true});
+        inner.add_child(label(request.display || request.summary, 'ab-text ab-mono', {lines: 1000, ellipsize: false}));
+        const scroll = new St.ScrollView({
+            style_class: 'ab-command', hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC, overlay_scrollbars: true,
+        });
+        scroll.set_child(inner);
+        card.add_child(scroll);
+    }
     if (['Edit', 'MultiEdit', 'Write', 'NotebookEdit'].includes(request.tool))
         card.add_child(label('The change itself is shown in the terminal.', 'ab-hint'));
 
     if (request.canDecide) {
         // Same choices as Claude Code's own prompt: Yes, its "Yes, and ..." suggestions, No.
-        // Unless the call could not be shown whole: then only No, since a Yes would approve
-        // something nobody saw.
-        const choices = request.incomplete
+        // Unless the call could not be shown whole (or is a plan): then only No, since a Yes
+        // would approve something nobody saw.
+        const choices = request.incomplete || isPlan
             ? [{text: 'No', decision: 'deny', style: 'ab-deny'}]
             : [
                 {text: 'Yes', decision: 'allow', style: 'ab-allow'},
                 ...(request.options ?? []).map(o => ({text: o.label, decision: JSON.stringify({suggestion: o.index}), style: ''})),
                 {text: 'No', decision: 'deny', style: 'ab-deny'},
             ];
-        if (request.incomplete)
+        if (request.incomplete && !isPlan)
             card.add_child(label(`Too long to show in full. Answer in ${agentLabel(request.agent)}.`, 'ab-hint ab-warning'));
         const list = new St.BoxLayout({vertical: true, style_class: 'ab-choices'});
         choices.forEach((choice, i) => {
@@ -269,7 +282,8 @@ function buildDiffView(edits) {
  * The session list: one row per session, waiting first. `compact` is the hover
  * peek: a single line per session (state, project, agent), no step text.
  */
-export function buildSessionList(sessions, {compact = false, openDiff = null, onToggleDiff = null} = {}) {
+export function buildSessionList(sessions, {compact = false, openDiff = null, onToggleDiff = null, onJump = null,
+    onRemove = null} = {}) {
     const list = new St.BoxLayout({vertical: true, style_class: 'ab-card ab-sessions'});
     if (!sessions.length) {
         list.add_child(label('No agent is running.', 'ab-hint'));
@@ -279,7 +293,7 @@ export function buildSessionList(sessions, {compact = false, openDiff = null, on
     for (const session of shown) {
         const row = new St.BoxLayout({vertical: true, style_class: 'ab-session'});
         const head = new St.BoxLayout();
-        head.add_child(new St.Widget({style_class: `ab-dot ${STATE_CLASS[session.state] ?? ''}`,
+        head.add_child(new St.Widget({style_class: `ab-dot ${session.dead ? 'ab-dot-dead' : STATE_CLASS[session.state] ?? ''}`,
             y_align: Clutter.ActorAlign.CENTER}));
         head.add_child(label(displayText(session.title || session.project || session.cwd || session.id), 'ab-session-name'));
         // With a title the project moves next to the agent, so neither is lost.
@@ -287,12 +301,26 @@ export function buildSessionList(sessions, {compact = false, openDiff = null, on
             ? `${agentLabel(session.agent)} · ${session.project}` : agentLabel(session.agent);
         head.add_child(new St.Label({text: origin, style_class: 'ab-caption ab-origin', y_align: Clutter.ActorAlign.CENTER}));
         if (compact)
-            head.add_child(new St.Label({text: STATE_WORD[session.state] ?? '', style_class: 'ab-caption ab-state',
-                y_align: Clutter.ActorAlign.CENTER}));
-        row.add_child(head);
+            head.add_child(new St.Label({text: session.dead ? 'dead' : STATE_WORD[session.state] ?? '',
+                style_class: 'ab-caption ab-state', y_align: Clutter.ActorAlign.CENTER}));
+        if (!compact && session.pids.length && onJump && !session.dead) {
+            // Clicking the session's name brings its terminal (or app) forward.
+            const target = new St.Button({style_class: 'ab-session-link', can_focus: true, x_expand: true, child: head});
+            target.connect('clicked', () => onJump(session));
+            row.add_child(target);
+        } else {
+            row.add_child(head);
+        }
         if (compact) {
             list.add_child(row);
             continue;
+        }
+        if (session.dead && onRemove) {
+            row.add_child(label('The agent is no longer running.', 'ab-hint'));
+            const remove = new St.Button({style_class: 'ab-diff-toggle', can_focus: true, x_align: Clutter.ActorAlign.START,
+                label: 'Remove'});
+            remove.connect('clicked', () => onRemove(session.key));
+            row.add_child(remove);
         }
 
         const last = session.state === State.DONE && session.summary

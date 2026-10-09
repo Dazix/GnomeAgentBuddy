@@ -205,13 +205,43 @@ def terminal_context(payload, env):
         payload.setdefault(key, env(var) or "")
 
 
+MAX_ANCESTORS = 12
+
+
+def parent_from_stat(stat):
+    """Parent pid from the text of /proc/<pid>/stat, or None. The command name sits in
+    parentheses and may contain spaces and parentheses, so cut after the last one."""
+    try:
+        return int(stat.rsplit(")", 1)[1].split()[1])
+    except (IndexError, ValueError):
+        return None
+
+
+def _proc_parent(pid):
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8", errors="replace") as handle:
+            return parent_from_stat(handle.read())
+    except OSError:
+        return None
+
+
+def ancestors_from(pid, parent_of=_proc_parent):
+    """`pid` and its parents, nearest first, up to init: the extension looks for the
+    window of a terminal among them to bring it forward."""
+    chain = []
+    while pid and pid > 1 and pid not in chain and len(chain) < MAX_ANCESTORS:
+        chain.append(pid)
+        pid = parent_of(pid)
+    return chain
+
+
 def agent_tag(arg, env):
     if arg:
         return arg
     return "claude-desktop" if env("CLAUDE_CODE_ENTRYPOINT") == "claude-desktop" else None
 
 
-def prepare(raw, agent, event_arg, env, cwd):
+def prepare(raw, agent, event_arg, env, cwd, ancestors=()):
     """The event to forward from the raw stdin bytes, or None when unreadable.
     Returns (line, event_name, question)."""
     if raw.startswith(b"\xef\xbb\xbf"):
@@ -237,6 +267,8 @@ def prepare(raw, agent, event_arg, env, cwd):
     if not _non_empty_str(payload, "cwd") and cwd:
         payload["cwd"] = cwd
     terminal_context(payload, env)
+    if ancestors:
+        payload["agentbuddy_pids"] = list(ancestors)
 
     # Kept whole: what goes back to Claude Code must be its own input.
     question = None
@@ -438,7 +470,7 @@ def main(argv=None, stdin=None, stdout=None):
     stdout = stdout or sys.stdout
     agent, event_arg = parse_args(argv)
     raw = stdin.read()
-    prepared = prepare(raw, agent, event_arg, os.environ.get, os.getcwd())
+    prepared = prepare(raw, agent, event_arg, os.environ.get, os.getcwd(), ancestors_from(os.getppid()))
     if prepared is None:
         out = reply_stdout(agent, canonical_event(event_arg), None, None)
     else:

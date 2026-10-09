@@ -222,8 +222,33 @@ test('stop: done session is happy, lingers, then goes away', () => {
     assertEqual(store.mood(), Mood.IDLE);
     clock.t += 55_000;
     store.prune();
+    assertEqual(store.sessions.size, 1);
+    assertEqual(store.list()[0].state, State.IDLE);
+    clock.t += 24 * 3600_000;
+    store.prune();
+    assertEqual(store.sessions.size, 1);
+    assertEqual(store.mood(), Mood.IDLE);
+});
+
+test('prune: a session whose nearest processes are gone is marked dead, kept, and revives on an event', () => {
+    const {store} = makeStore();
+    const alive = new Set([10, 20, 99]);
+    store.isAlive = pid => alive.has(pid);
+    store.handleEvent(ev('UserPromptSubmit', {agentbuddy_pids: [10, 20, 99]}));
+    assertEqual(store.prune(), false);
+    alive.delete(10);
+    assertEqual(store.prune(), false);
+    alive.delete(20);
+    assertEqual(store.prune(), true);
+    assertEqual(store.list()[0].dead, true);
+    assertEqual(store.list()[0].state, State.IDLE);
+    assertEqual(store.sessions.size, 1);
+    store.handleEvent(ev('PreToolUse', {tool_name: 'Bash'}));
+    assertEqual(store.list()[0].dead, false);
+    store.prune();
+    assertEqual(store.list()[0].dead, true);
+    store.removeSession(store.list()[0].key);
     assertEqual(store.sessions.size, 0);
-    assertEqual(store.mood(), Mood.SLEEPY);
 });
 
 test('stop failure is sad; session end removes the session and releases requests', () => {
@@ -283,4 +308,11 @@ test('PostToolUse of an Edit without a matching step still shows the change', ()
     const {store} = makeStore();
     store.handleEvent(ev('PostToolUse', {tool_name: 'Write', tool_input: {file_path: '/p/n.txt', content: 'a\nb'}}));
     assertEqual(store.list()[0].steps.pop(), 'Write · n.txt +2 −0');
+});
+
+test('the relay process chain is kept (cleaned) and survives events without one', () => {
+    const {store} = makeStore();
+    store.handleEvent(ev('SessionStart', {agentbuddy_pids: [30, 20, 'x', -3]}));
+    store.handleEvent(ev('PreToolUse', {tool_name: 'Bash', tool_input: {command: 'ls'}}));
+    assertEqual(store.list()[0].pids, [30, 20]);
 });
