@@ -74,6 +74,22 @@ test('snap: within the distance of the left or right edge it docks flush to it',
     assertEqual([farRight.x, farRight.dock.right], [1619, false]);
 });
 
+test('snap: a remembered side edge keeps a shrunken notch docked', () => {
+    // Folded to 60 px wide, the saved centre (100) is 70 px from the wall: beyond snap 20, but the edge wins.
+    const folded = {...base, size: {width: 60, height: 40}};
+    const left = place({...folded, saved: {x: 100, y: 400, edge: 'left'}});
+    assertEqual([left.x, left.dock.left], [0, true]);
+    assertEqual(place({...folded, saved: {x: 100, y: 400}}).dock.left, false);
+
+    const right = place({...folded, saved: {x: 1820, y: 400, edge: 'right'}});
+    assertEqual([right.x, right.dock.right], [1860, true]);
+
+    // On another monitor the edge is that monitor's, and a spot off the chosen monitor still falls back.
+    const onSecond = place({...folded, primary: second, saved: {x: 2020, y: 400, edge: 'left'}});
+    assertEqual([onSecond.x, onSecond.dock.left], [1920, true]);
+    assertEqual(place({...folded, saved: {x: 2500, y: 100, edge: 'left'}}).dock.left, false);
+});
+
 test('snap: within the distance of the top it docks to the top, otherwise it hangs free', () => {
     const near = place({...base, snap: 100, saved: {x: 600, y: 32 + 90}});
     assertEqual([near.y, near.dock.top], [32, true]);

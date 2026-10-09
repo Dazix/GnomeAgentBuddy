@@ -16,7 +16,7 @@ const PRUNE_SECONDS = 5;
 /** Settings keys that change what the store accepts or how the notch looks. */
 const LIVE_KEYS = ['scale', 'background-opacity', 'compact-height', 'hide-when-idle', 'overlay-panel', 'auto-open-requests',
     'monitor', 'position-x', 'position-y', 'snap-threshold',
-    'enabled-agents', 'decision-timeout', 'finished-linger'];
+    'enabled-agents', 'decision-timeout', 'auto-fold-seconds', 'finished-linger'];
 
 export default class AgentBuddyExtension extends Extension {
     enable() {

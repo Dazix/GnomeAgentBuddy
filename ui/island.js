@@ -15,6 +15,9 @@ const MASCOT_SIZE = 46;
 const FOLD_MS = 150;
 const PEEK_DELAY_MS = 80;
 const MORPH_MS = 300;
+/** Pixels kept free around the expanded notch (body padding, card padding) beyond the margins. */
+const BODY_SLACK = 40;
+const MIN_BODY_HEIGHT = 120;
 
 /**
  * The notch: a tab at the top centre of the screen that shows the mascot and a
@@ -58,15 +61,16 @@ class Island extends St.Widget {
         this.add_child(this._box);
 
         this._mascot = new Mascot(MASCOT_SIZE);
-        this._title = new St.Label({style_class: 'ab-title', y_align: Clutter.ActorAlign.CENTER});
-        this._badge = new St.Label({style_class: 'ab-badge', y_align: Clutter.ActorAlign.CENTER, visible: false});
+        this._title = new St.Label({style_class: 'ab-title', x_align: Clutter.ActorAlign.CENTER, y_align: Clutter.ActorAlign.CENTER});
+        this._badge = new St.Label({style_class: 'ab-badge', x_align: Clutter.ActorAlign.CENTER, y_align: Clutter.ActorAlign.CENTER, visible: false});
+        this._mascot.x_align = Clutter.ActorAlign.CENTER;
 
         this._header = new St.Button({style_class: 'ab-header', can_focus: true, x_expand: true});
-        const row = new St.BoxLayout({x_align: Clutter.ActorAlign.CENTER, y_align: Clutter.ActorAlign.CENTER});
-        row.add_child(this._mascot);
-        row.add_child(this._title);
-        row.add_child(this._badge);
-        this._header.set_child(row);
+        this._row = new St.BoxLayout({x_align: Clutter.ActorAlign.CENTER, y_align: Clutter.ActorAlign.CENTER});
+        this._row.add_child(this._mascot);
+        this._row.add_child(this._title);
+        this._row.add_child(this._badge);
+        this._header.set_child(this._row);
         this._header.connect('clicked', () => this.toggle());
         this._box.add_child(this._header);
 
@@ -114,6 +118,9 @@ class Island extends St.Widget {
                 this.fold();
             return Clutter.EVENT_PROPAGATE;
         });
+        // Unfolded and left alone (no pointer, no key focus) it folds after `auto-fold-seconds`.
+        this._foldTimer = 0;
+        this._focusId = global.stage.connect('notify::key-focus', () => this._syncFoldTimer());
 
         this.applySettings();
         this.refresh();
@@ -128,9 +135,10 @@ class Island extends St.Widget {
         const pad = this._metrics.margin;
         const compact = this._settings.get_boolean('compact-height');
         this._box.set_style(`padding: ${pad + (compact ? 4 : 6)}px ${pad + 10}px;`);
-        this._header.set_style(`padding: ${compact ? 0 : 4}px 12px;`);
+        this._syncHeaderStyle();
         this._bg.queue_repaint();
         this._reposition();
+        this._syncFoldTimer();
         if (this._shown) {
             this.remove_transition('opacity');
             this.opacity = this._targetOpacity();
@@ -177,7 +185,9 @@ class Island extends St.Widget {
                 const saved = savedFrom(this.x + m, this.y + m, this.width - 2 * m);
                 this._settings.delay();
                 this._saveMonitorUnder(saved.x, saved.y);
-                this._savePosition(saved);
+                // Which side edge it docks to is remembered, so folding (a narrower body) keeps it there.
+                const {dock} = this._place(saved);
+                this._savePosition(saved, dock.left ? 'left' : dock.right ? 'right' : '');
                 this._settings.apply();
             }
             // Glide to the snapped spot and flow into the edge it docks to.
@@ -200,6 +210,29 @@ class Island extends St.Widget {
         this._setDock({left: false, right: false, top: false}, true);
         this._drag = {x, y, left: this.x, top: this.y};
         this._grab = global.stage.grab(this);
+        this._syncFoldTimer();
+    }
+
+    _syncHeaderStyle() {
+        const compact = this._settings.get_boolean('compact-height');
+        this._header.set_style(this._row.vertical ? 'padding: 4px 6px;' : `padding: ${compact ? 0 : 4}px 12px;`);
+    }
+
+    /**
+     * Docked to a side edge and folded, the header is a narrow column (mascot, text, badge
+     * one under the other); otherwise a row. Returns whether the layout changed.
+     */
+    _syncOrientation() {
+        const vertical = (this._dock.left || this._dock.right) && !this._expanded && !this._peek;
+        if (this._row.vertical === vertical)
+            return false;
+        this._row.vertical = vertical;
+        if (vertical)
+            this._row.add_style_class_name('ab-vertical');
+        else
+            this._row.remove_style_class_name('ab-vertical');
+        this._syncHeaderStyle();
+        return true;
     }
 
     /** Morph the background to the shape for these docked edges. */
@@ -209,6 +242,11 @@ class Island extends St.Widget {
             return;
         this._dockFrom = this._dock;
         this._dock = dock;
+        // The new size re-places us through notify::allocation.
+        if (this.visible && this._shown)
+            this._resizeAround(() => this._syncOrientation());
+        else
+            this._syncOrientation();
         this._morph.remove_transition('value');
         if (animate) {
             this._morph.value = 0;
@@ -245,15 +283,18 @@ class Island extends St.Widget {
         this._drag = null;
         this._grab?.dismiss();
         this._grab = null;
+        this._syncFoldTimer();
     }
 
-    /** Persist the dropped spot (centre x, top y); null forgets it, back to the default. */
-    _savePosition(saved) {
+    /** Persist the dropped spot (centre x, top y) and docked side edge; null forgets it, back to the default. */
+    _savePosition(saved, edge = '') {
         this._settings.set_int('position-x', saved ? saved.x : -1);
         this._settings.set_int('position-y', saved ? saved.y : -1);
+        this._settings.set_string('position-edge', saved ? edge : '');
     }
 
     _onHover() {
+        this._syncFoldTimer();
         if (this._peekTimer) {
             GLib.source_remove(this._peekTimer);
             this._peekTimer = 0;
@@ -274,6 +315,24 @@ class Island extends St.Widget {
         GLib.Source.set_name_by_id(this._peekTimer, '[GnomeAgentBuddy] peek');
     }
 
+    /** (Re)start the idle countdown, or stop it while the notch is folded, hovered, focused or dragged. */
+    _syncFoldTimer() {
+        if (this._foldTimer) {
+            GLib.source_remove(this._foldTimer);
+            this._foldTimer = 0;
+        }
+        const seconds = this._settings.get_int('auto-fold-seconds');
+        const focused = this.contains(global.stage.key_focus);
+        if (!this._expanded || !seconds || this.hover || focused || this._drag)
+            return;
+        this._foldTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, seconds, () => {
+            this._foldTimer = 0;
+            this.fold();
+            return GLib.SOURCE_REMOVE;
+        });
+        GLib.Source.set_name_by_id(this._foldTimer, '[GnomeAgentBuddy] auto-fold');
+    }
+
     toggle() {
         if (this._expanded)
             this.fold();
@@ -285,12 +344,14 @@ class Island extends St.Widget {
         this._expanded = true;
         this.refresh();
         this.grab_key_focus();
+        this._syncFoldTimer();
     }
 
     fold() {
         this._expanded = false;
         this._diffKey = null;
         this.refresh();
+        this._syncFoldTimer();
     }
 
     /** Re-read the store: mood, title, badge, and the open card. */
@@ -301,8 +362,10 @@ class Island extends St.Widget {
         // (`auto-open-requests`); otherwise the notch just signals it. Folding keeps it folded.
         if (request && request.id > this._lastRequestId) {
             this._lastRequestId = request.id;
-            if (this._settings.get_boolean('auto-open-requests'))
+            if (this._settings.get_boolean('auto-open-requests')) {
                 this._expanded = true;
+                this._syncFoldTimer();
+            }
         }
         // The tab itself glows while something waits for an answer.
         if (request)
@@ -324,7 +387,10 @@ class Island extends St.Widget {
             return;
         }
         this._fade(true);
-        this._resizeAround(() => this._renderBody(request));
+        this._resizeAround(() => {
+            this._syncOrientation();
+            this._renderBody(request);
+        });
         this._reposition();
     }
 
@@ -419,7 +485,7 @@ class Island extends St.Widget {
                     ? () => this._jumpTo(this._store.sessions.get(request.sessionKey)) : null,
             });
         else
-            this._content = buildSessionList(this._store.list(), {
+            this._content = this._scrollable(buildSessionList(this._store.list(), {
                 onJump: session => this._jumpTo(session),
                 onRemove: key => this._store.removeSession(key),
                 openDiff: this._diffKey,
@@ -428,7 +494,7 @@ class Island extends St.Widget {
                     this._resizeAround(() => this._renderBody(this._store.current));
                     this._reposition();
                 },
-            });
+            }));
         this._body.add_child(this._content);
         if (!this._body.visible) {
             this._body.visible = true;
@@ -436,6 +502,22 @@ class Island extends St.Widget {
             this._body.ease({opacity: 255, duration: FOLD_MS, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
         }
         this._syncCountdown();
+    }
+
+    /**
+     * `list` in a scroll view no taller than the screen leaves room for: the work area minus
+     * the notch's own header and margins. A long diff scrolls instead of running off the screen.
+     */
+    _scrollable(list) {
+        const monitor = this._targetMonitor();
+        const m = this._metrics.margin;
+        const room = monitor.height - Main.panel.height - this._header.height - 4 * m - BODY_SLACK;
+        const scroll = new St.ScrollView({
+            hscrollbar_policy: St.PolicyType.NEVER, vscrollbar_policy: St.PolicyType.AUTOMATIC,
+            overlay_scrollbars: true, style: `max-height: ${Math.max(MIN_BODY_HEIGHT, Math.floor(room))}px;`,
+        });
+        scroll.set_child(list);
+        return scroll;
     }
 
     /** Tick once a second while a card shows a countdown; no timer otherwise. */
@@ -472,6 +554,22 @@ class Island extends St.Widget {
         this._settings.set_string('monitor', dropped === primaryMonitor ? '' : connectorForIndex(dropped.index));
     }
 
+    /** `place()` for the notch's current size; the widget is the body plus a margin on every side, placement works on the body. */
+    _place(saved) {
+        const {monitors} = Main.layoutManager;
+        const m = this._metrics.margin;
+        const [width, height] = this.get_size();
+        return place({
+            saved,
+            size: {width: Math.max(0, width - 2 * m), height: Math.max(0, height - 2 * m)},
+            monitors,
+            primary: this._targetMonitor(),
+            panelHeight: Main.panel.height,
+            overlay: this._settings.get_boolean('overlay-panel'),
+            snap: this._settings.get_int('snap-threshold'),
+        });
+    }
+
     /**
      * Where the user dropped it, snapped to the edges, else the top centre under the
      * panel (see lib/placement.js). `animate`: glide there and flow into the docked
@@ -482,17 +580,11 @@ class Island extends St.Widget {
         // While it is being dragged the pointer decides, not us.
         if (!primaryMonitor || this._drag)
             return;
-        // The widget is the body plus a margin on every side; placement works on the body.
         const m = this._metrics.margin;
-        const [width, height] = this.get_size();
-        const {x, y, dock} = place({
-            saved: {x: this._settings.get_int('position-x'), y: this._settings.get_int('position-y')},
-            size: {width: Math.max(0, width - 2 * m), height: Math.max(0, height - 2 * m)},
-            monitors,
-            primary: this._targetMonitor(),
-            panelHeight: Main.panel.height,
-            overlay: this._settings.get_boolean('overlay-panel'),
-            snap: this._settings.get_int('snap-threshold'),
+        const {x, y, dock} = this._place({
+            x: this._settings.get_int('position-x'),
+            y: this._settings.get_int('position-y'),
+            edge: this._settings.get_string('position-edge'),
         });
         this._setDock(dock, animate);
         if (animate) {
@@ -522,6 +614,14 @@ class Island extends St.Widget {
         if (this._outsideId) {
             global.stage.disconnect(this._outsideId);
             this._outsideId = 0;
+        }
+        if (this._focusId) {
+            global.stage.disconnect(this._focusId);
+            this._focusId = 0;
+        }
+        if (this._foldTimer) {
+            GLib.source_remove(this._foldTimer);
+            this._foldTimer = 0;
         }
         super.destroy();
     }

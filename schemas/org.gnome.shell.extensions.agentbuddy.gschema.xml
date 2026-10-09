@@ -46,6 +46,10 @@
       <default>-1</default>
       <summary>Top edge of a notch the user moved, in screen pixels (-1: just under the panel)</summary>
     </key>
+    <key name="position-edge" type="s">
+      <default>''</default>
+      <summary>Screen edge a notch the user moved is docked to: 'left', 'right' or '' (none)</summary>
+    </key>
     <key name="enabled-agents" type="as">
       <default>['claude', 'codex', 'gemini', 'copilot']</default>
       <summary>Agents shown in the notch</summary>
@@ -54,6 +58,11 @@
       <range min="10" max="110"/>
       <default>100</default>
       <summary>Seconds a permission card stays before it closes (the terminal keeps asking)</summary>
+    </key>
+    <key name="auto-fold-seconds" type="i">
+      <range min="0" max="600"/>
+      <default>15</default>
+      <summary>Seconds without hover or focus after which an unfolded notch folds (0: never)</summary>
     </key>
     <key name="finished-linger" type="i">
       <range min="5" max="600"/>

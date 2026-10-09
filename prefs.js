@@ -117,6 +117,11 @@ export default class AgentBuddyPreferences extends ExtensionPreferences {
             subtitle: 'How long the card stays. The question is also asked in the terminal all along, and the agent gives up on the card at about 110 s.',
             lower: 10, upper: 110, step: 5,
         }));
+        timing.add(spinRow(settings, 'auto-fold-seconds', {
+            title: 'Fold when idle (seconds)',
+            subtitle: 'An unfolded notch folds itself after this long without the pointer on it or keyboard focus. 0: never',
+            lower: 0, upper: 600, step: 5,
+        }));
         timing.add(spinRow(settings, 'finished-linger', {
             title: 'Keep finished sessions (seconds)', lower: 5, upper: 600, step: 5,
         }));

@@ -4,6 +4,7 @@ import Pango from 'gi://Pango';
 import St from 'gi://St';
 
 import {AGENTS} from '../lib/hookInstaller.js';
+import {TokenKind, languageFor, tokenize} from '../lib/syntax.js';
 import {State, displayText} from '../model/sessionStore.js';
 
 export const agentLabel = id => AGENTS[id]?.label ?? id;
@@ -261,6 +262,32 @@ const DIFF_CLASS = {'+': 'ab-diff-add', '-': 'ab-diff-del', '@': 'ab-diff-gap', 
 /** Edits shown with their lines, newest first; older ones only as a heading. */
 const DIFF_EXPANDED = 3;
 
+const SYNTAX_COLOR = {
+    [TokenKind.KEYWORD]: '#c792ea',
+    [TokenKind.STRING]: '#c3e88d',
+    [TokenKind.NUMBER]: '#f78c6c',
+    [TokenKind.COMMENT]: '#7f8a9a',
+};
+
+/** Pango markup for a line of code, coloured by syntax. */
+function highlightMarkup(text, language) {
+    return tokenize(text, language).map(({text: part, kind}) => {
+        const escaped = GLib.markup_escape_text(part, -1);
+        return SYNTAX_COLOR[kind] ? `<span foreground="${SYNTAX_COLOR[kind]}">${escaped}</span>` : escaped;
+    }).join('');
+}
+
+function codeLine(line, language) {
+    const actor = label('', `ab-mono ${DIFF_CLASS[line.op]}`);
+    if (line.op === '@') {
+        actor.set_text(line.text);
+        return actor;
+    }
+    const sign = line.op === ' ' ? ' ' : `<b>${line.op}</b>`;
+    actor.get_clutter_text().set_markup(`${sign} ${highlightMarkup(line.text, language)}`);
+    return actor;
+}
+
 /** The edits of a session: `file +N −M`, and the changed lines for the newest few. */
 function buildDiffView(edits) {
     const view = new St.BoxLayout({vertical: true, style_class: 'ab-diff'});
@@ -268,10 +295,9 @@ function buildDiffView(edits) {
         view.add_child(label(`${displayText(edit.file)}  +${edit.added} −${edit.removed}`, 'ab-diff-file'));
         if (index >= DIFF_EXPANDED)
             return;
-        for (const line of edit.lines) {
-            const text = line.op === '@' ? line.text : `${line.op} ${line.text}`;
-            view.add_child(label(text, `ab-mono ${DIFF_CLASS[line.op]}`));
-        }
+        const language = languageFor(edit.file);
+        for (const line of edit.lines)
+            view.add_child(codeLine(line, language));
         if (edit.truncated)
             view.add_child(label('… diff cut', 'ab-hint'));
     });
