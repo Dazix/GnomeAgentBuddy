@@ -19,8 +19,6 @@ jobs:
       # Syntax only: the files import gi:// modules, which only exist inside gjs/GNOME Shell.
       - name: Check JavaScript syntax
         run: git ls-files -z '*.js' | xargs -0 -n1 node --check
-      - name: Lint Python
-        run: pipx run ruff==0.16.10 check --isolated --select E4,E7,E9,F relay
 
   test:
     runs-on: ubuntu-latest
@@ -31,7 +29,5 @@ jobs:
       # Compiles for real (not --dry-run): a test reads the compiled schema.
       - name: Compile and validate GSettings schema
         run: glib-compile-schemas --strict schemas/
-      - name: Extension unit tests
+      - name: Extension and relay unit tests
         run: gjs -m tests/run.js
-      - name: Relay unit tests
-        run: python3 -m unittest discover -s relay

@@ -1,7 +1,7 @@
 import {AGENTS, AGENT_IDS, entryIsOurs, lineDiff, pretty, relayCommand, shellQuote} from '../lib/hookInstaller.js';
 import {assertEqual, assertTrue, test} from './harness.js';
 
-const RELAY = '/home/me/.local/share/GnomeAgentBuddy/bin/agentbuddy-hook';
+const RELAY = '/home/me/.local/share/AgentBuddy/bin/agentbuddy-hook';
 
 test('shellQuote and relayCommand quote one shell word', () => {
     assertEqual(shellQuote("it's"), `'it'\\''s'`);
@@ -59,7 +59,7 @@ test('codex: no matcher, seconds, the waiting message on PermissionRequest', () 
     const permission = after.hooks.PermissionRequest[0].hooks[0];
     assertEqual(permission.timeout, 120);
     assertTrue(permission.command.includes('--agent codex PermissionRequest'));
-    assertTrue(permission.statusMessage.includes('GnomeAgentBuddy'));
+    assertTrue(permission.statusMessage.includes('AgentBuddy'));
     assertEqual(after.hooks.PreToolUse[0].matcher, undefined);
 });
 

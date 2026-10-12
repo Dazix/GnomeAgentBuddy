@@ -54,7 +54,7 @@ function makeArming(card) {
         }
         return GLib.SOURCE_REMOVE;
     });
-    GLib.Source.set_name_by_id(source, '[GnomeAgentBuddy] card arming');
+    GLib.Source.set_name_by_id(source, '[AgentBuddy] card arming');
     card.connect('destroy', () => {
         if (source)
             GLib.source_remove(source);
@@ -329,9 +329,11 @@ export function buildSessionList(sessions, {compact = false, openDiff = null, on
         if (compact)
             head.add_child(new St.Label({text: session.dead ? 'dead' : STATE_WORD[session.state] ?? '',
                 style_class: 'ab-caption ab-state', y_align: Clutter.ActorAlign.CENTER}));
-        if (!compact && session.pids.length && onJump && !session.dead) {
+        if (session.pids.length && onJump && !session.dead) {
             // Clicking the session's name brings its terminal (or app) forward.
-            const target = new St.Button({style_class: 'ab-session-link', can_focus: true, x_expand: true, child: head});
+            head.set({x_expand: true, x_align: Clutter.ActorAlign.FILL});
+            const target = new St.Button({style_class: 'ab-session-link', can_focus: true, x_expand: true,
+                x_align: Clutter.ActorAlign.FILL, child: head});
             target.connect('clicked', () => onJump(session));
             row.add_child(target);
         } else {

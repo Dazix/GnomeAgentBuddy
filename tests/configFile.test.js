@@ -1,7 +1,7 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import {apply, installRelay, isInstalled, plan, relayInstallPath} from '../lib/configFile.js';
+import {apply, installRelay, isInstalled, plan, refreshRelay, relayInstallPath} from '../lib/configFile.js';
 import {assertEqual, assertTrue, test} from './harness.js';
 
 const root = Gio.File.new_for_uri(import.meta.url).get_parent().get_parent();
@@ -156,6 +156,18 @@ test('permissions: a private config stays private (file, backup), and a new one 
     }
 });
 
+test('refreshRelay writes nothing until the relay was installed once', () => {
+    const home = tempHome();
+    try {
+        assertEqual(refreshRelay(root, home), null);
+        assertEqual(Gio.File.new_for_path(relayInstallPath(home)).query_exists(null), false);
+        installRelay(root, home);
+        assertEqual(refreshRelay(root, home), relayInstallPath(home));
+    } finally {
+        remove(home);
+    }
+});
+
 test('installRelay copies the relay executable and is idempotent', () => {
     const home = tempHome();
     try {
@@ -164,7 +176,8 @@ test('installRelay copies the relay executable and is idempotent', () => {
         const info = Gio.File.new_for_path(path).query_info('unix::mode', Gio.FileQueryInfoFlags.NONE, null);
         assertEqual(info.get_attribute_uint32('unix::mode') & 0o777, 0o755);
         assertEqual(installRelay(root, home), path);
-        assertTrue(read(path).startsWith('#!/usr/bin/env python3'));
+        assertTrue(read(path).startsWith('#!/usr/bin/env -S gjs -m'));
+        assertTrue(read(`${GLib.path_get_dirname(path)}/agentbuddy-hook-core.js`).includes('export function run'));
     } finally {
         remove(home);
     }

@@ -37,6 +37,14 @@ test('prompt then tools: working session with a bounded ticker', () => {
     assertEqual(store.mood(), Mood.WORKING);
 });
 
+test('idle_prompt notification settles an interrupted working session to idle', () => {
+    const {store} = makeStore();
+    store.handleEvent(ev('UserPromptSubmit', {prompt: 'fix it'}));
+    store.handleEvent(ev('Notification', {notification_type: 'idle_prompt', message: 'Claude is waiting for your input'}));
+    assertEqual(store.list()[0].state, State.IDLE);
+    assertEqual(store.mood(), Mood.IDLE);
+});
+
 test('permission request: waits, resolves once, back to working', () => {
     const {store} = makeStore();
     const answers = [];

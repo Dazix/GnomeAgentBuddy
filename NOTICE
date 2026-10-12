@@ -1,6 +1,6 @@
-GnomeAgentBuddy includes code ported from Coucou (https://github.com/Louis-CFM/coucou):
+AgentBuddy includes code ported from Coucou (https://github.com/Louis-CFM/coucou):
 
-  - relay/agentbuddy_hook.py: the per-agent event and field normalisation and the
+  - relay/agentbuddy-hook-core.js: the per-agent event and field normalisation and the
     reply formats (windows/hook/src/normalize.rs, reply.rs, main.rs)
   - lib/hookInstaller.js: the hook configuration formats and the merge and
     uninstall rules (windows/src-tauri/src/hooks.rs, agents.rs)

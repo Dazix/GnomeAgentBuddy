@@ -9,7 +9,7 @@ Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async', 'communicate_
 
 const relayPath = GLib.build_filenamev([
     Gio.File.new_for_uri(import.meta.url).get_parent().get_parent().get_path(),
-    'relay', 'agentbuddy_hook.py',
+    'relay', 'agentbuddy-hook',
 ]);
 
 function withServer(fn) {
@@ -32,7 +32,7 @@ async function runRelay(dir, payload, args = []) {
         flags: Gio.SubprocessFlags.STDIN_PIPE | Gio.SubprocessFlags.STDOUT_PIPE,
     });
     launcher.setenv('XDG_RUNTIME_DIR', dir, true);
-    const proc = launcher.spawnv(['python3', relayPath, ...args]);
+    const proc = launcher.spawnv(['gjs', '-m', relayPath, ...args]);
     const [stdout] = await proc.communicate_utf8_async(JSON.stringify(payload), null);
     return stdout;
 }

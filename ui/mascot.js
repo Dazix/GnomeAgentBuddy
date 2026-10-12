@@ -99,7 +99,7 @@ class Mascot extends St.DrawingArea {
             this.queue_repaint();
             return GLib.SOURCE_CONTINUE;
         });
-        GLib.Source.set_name_by_id(this._timer, '[GnomeAgentBuddy] mascot');
+        GLib.Source.set_name_by_id(this._timer, '[AgentBuddy] mascot');
     }
 
     _stopTimer() {

@@ -114,7 +114,8 @@ class Island extends St.Widget {
         });
         this._monitorsId = Main.layoutManager.connect('monitors-changed', () => this._reposition());
         this._outsideId = global.stage.connect('button-press-event', (_stage, event) => {
-            if (this._expanded && !this.contains(event.get_source()))
+            const source = event.get_source();
+            if (this._expanded && source && !this.contains(source))
                 this.fold();
             return Clutter.EVENT_PROPAGATE;
         });
@@ -312,7 +313,7 @@ class Island extends St.Widget {
             this.refresh();
             return GLib.SOURCE_REMOVE;
         });
-        GLib.Source.set_name_by_id(this._peekTimer, '[GnomeAgentBuddy] peek');
+        GLib.Source.set_name_by_id(this._peekTimer, '[AgentBuddy] peek');
     }
 
     /** (Re)start the idle countdown, or stop it while the notch is folded, hovered, focused or dragged. */
@@ -322,7 +323,8 @@ class Island extends St.Widget {
             this._foldTimer = 0;
         }
         const seconds = this._settings.get_int('auto-fold-seconds');
-        const focused = this.contains(global.stage.key_focus);
+        const keyFocus = global.stage.key_focus;
+        const focused = !!keyFocus && this.contains(keyFocus);
         if (!this._expanded || !seconds || this.hover || focused || this._drag)
             return;
         this._foldTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, seconds, () => {
@@ -330,7 +332,7 @@ class Island extends St.Widget {
             this.fold();
             return GLib.SOURCE_REMOVE;
         });
-        GLib.Source.set_name_by_id(this._foldTimer, '[GnomeAgentBuddy] auto-fold');
+        GLib.Source.set_name_by_id(this._foldTimer, '[AgentBuddy] auto-fold');
     }
 
     toggle() {
@@ -478,7 +480,7 @@ class Island extends St.Widget {
         this._contentKey = key;
         this._content?.destroy();
         if (!this._expanded)
-            this._content = buildSessionList(this._store.list(), {compact: true});
+            this._content = buildSessionList(this._store.list(), {compact: true, onJump: session => this._jumpTo(session)});
         else if (request)
             this._content = buildRequestCard(request, decision => this._store.resolve(request.id, decision), {
                 onJump: this._store.sessions.get(request.sessionKey)?.pids.length
@@ -530,7 +532,7 @@ class Island extends St.Widget {
                 this._store.prune();
                 return GLib.SOURCE_CONTINUE;
             });
-            GLib.Source.set_name_by_id(this._countdownId, '[GnomeAgentBuddy] countdown');
+            GLib.Source.set_name_by_id(this._countdownId, '[AgentBuddy] countdown');
         } else if (!needed && this._countdownId) {
             GLib.source_remove(this._countdownId);
             this._countdownId = 0;
