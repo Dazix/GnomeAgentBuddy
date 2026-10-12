@@ -15,6 +15,7 @@ const MASCOT_SIZE = 46;
 const FOLD_MS = 150;
 const PEEK_DELAY_MS = 80;
 const MORPH_MS = 300;
+const RESIZE_MS = FOLD_MS + 50;
 /** Pixels kept free around the expanded notch (body padding, card padding) beyond the margins. */
 const BODY_SLACK = 40;
 const MIN_BODY_HEIGHT = 120;
@@ -104,8 +105,11 @@ class Island extends St.Widget {
         // A new size (unfolding, a longer title) re-places the notch; our own glide to a new
         // spot changes the position only, so it is not cut short by this.
         this._size = [0, 0];
+        this._targetSize = null;
         this.connect('notify::allocation', () => {
             this._bg.queue_repaint();
+            if (this._targetSize)
+                return;
             const size = this.get_size();
             if (size[0] !== this._size[0] || size[1] !== this._size[1]) {
                 this._size = size;
@@ -426,6 +430,7 @@ class Island extends St.Widget {
     _resizeAround(change) {
         this.remove_transition('width');
         this.remove_transition('height');
+        this._targetSize = null;
         const [width, height] = this.get_size();
         const animate = this.visible && this._shown && !this._drag && width > 0;
         this.set_size(-1, -1);
@@ -436,11 +441,18 @@ class Island extends St.Widget {
         if (Math.round(newWidth) === width && Math.round(newHeight) === height)
             return;
         this.set_size(width, height);
+        // The position glides with the size in the same transition: re-placing on every
+        // frame's allocation would lag one frame behind the width and shake sideways.
+        this._targetSize = [newWidth, newHeight];
         this.ease({
-            width: newWidth, height: newHeight, duration: FOLD_MS + 50,
+            width: newWidth, height: newHeight, duration: RESIZE_MS,
             mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
-            onComplete: () => this.set_size(-1, -1),
+            onComplete: () => {
+                this._targetSize = null;
+                this.set_size(-1, -1);
+            },
         });
+        this._reposition();
     }
 
     _titleFor(mood, request) {
@@ -560,7 +572,7 @@ class Island extends St.Widget {
     _place(saved) {
         const {monitors} = Main.layoutManager;
         const m = this._metrics.margin;
-        const [width, height] = this.get_size();
+        const [width, height] = this._targetSize ?? this.get_size();
         return place({
             saved,
             size: {width: Math.max(0, width - 2 * m), height: Math.max(0, height - 2 * m)},
@@ -591,6 +603,8 @@ class Island extends St.Widget {
         this._setDock(dock, animate);
         if (animate) {
             this.ease({x: x - m, y: y - m, duration: MORPH_MS, mode: Clutter.AnimationMode.EASE_OUT_CUBIC});
+        } else if (this._targetSize) {
+            this.ease({x: x - m, y: y - m, duration: RESIZE_MS, mode: Clutter.AnimationMode.EASE_OUT_CUBIC});
         } else {
             // Only the position: a running fade or resize must go on.
             this.remove_transition('x');
