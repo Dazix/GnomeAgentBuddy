@@ -3,7 +3,7 @@ import St from 'gi://St';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-import {installRelay} from './lib/configFile.js';
+import {refreshRelay} from './lib/configFile.js';
 import {RelayServer} from './lib/relayServer.js';
 import {readTitle} from './lib/transcriptTitle.js';
 import {focusSessionWindow} from './lib/windowFocus.js';
@@ -16,8 +16,18 @@ const PRUNE_SECONDS = 5;
 /** Settings keys that change what the store accepts or how the notch looks. */
 const LIVE_KEYS = ['scale', 'background-opacity', 'compact-height', 'hide-when-idle', 'overlay-panel', 'auto-open-requests',
     'monitor', 'position-x', 'position-y', 'snap-threshold',
-    'enabled-agents', 'decision-timeout', 'finished-linger'];
+    'enabled-agents', 'decision-timeout', 'auto-fold-seconds', 'finished-linger'];
 
+/**
+ * Lifecycle: nothing is created before enable() and everything created there (widget,
+ * socket server, timers, signal handlers, stylesheet) is undone in disable(), so the
+ * shell can switch the extension off and on without a leftover.
+ *
+ * Outside its own directory the extension only does what the user asked for in the
+ * settings (installing the hook relay, editing an agent's hook config after a diff
+ * preview, see lib/configFile.js). It makes no network connection; its only
+ * IPC is the Unix socket the relay talks to (lib/relayServer.js).
+ */
 export default class AgentBuddyExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
@@ -25,11 +35,12 @@ export default class AgentBuddyExtension extends Extension {
         this._stylesheet = this.dir.get_child('stylesheet.css');
         St.ThemeContext.get_for_stage(global.stage).get_theme().load_stylesheet(this._stylesheet);
 
-        // Keep the relay the agents' configs point at in step with this version.
+        // Keep an already installed relay (the file the agents' hooks run) in step with this
+        // version. Nothing is written if the user never installed it from the settings.
         try {
-            installRelay(this.dir);
+            refreshRelay(this.dir);
         } catch (e) {
-            console.error(`GnomeAgentBuddy: could not install the relay: ${e.message}`);
+            console.error(`AgentBuddy: could not update the relay: ${e.message}`);
         }
 
         this._store = new SessionStore();
@@ -49,14 +60,14 @@ export default class AgentBuddyExtension extends Extension {
         try {
             this._server.start();
         } catch (e) {
-            console.error(`GnomeAgentBuddy: could not listen for the relay: ${e.message}`);
+            console.error(`AgentBuddy: could not listen for the relay: ${e.message}`);
         }
 
         this._pruneId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, PRUNE_SECONDS, () => {
             this._store.prune();
             return GLib.SOURCE_CONTINUE;
         });
-        GLib.Source.set_name_by_id(this._pruneId, '[GnomeAgentBuddy] prune');
+        GLib.Source.set_name_by_id(this._pruneId, '[AgentBuddy] prune');
 
         this._settingsIds = LIVE_KEYS.map(key => this._settings.connect(`changed::${key}`, () => {
             this._applyStoreSettings();

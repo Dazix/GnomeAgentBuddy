@@ -254,6 +254,9 @@ export class SessionStore {
             request = this._addRequest(session, payload, respond);
             break;
         case 'Notification':
+            // An interrupted turn fires no Stop; the agent's own idle reminder says it is waiting.
+            if (payload.notification_type === 'idle_prompt' && session.state === State.WORKING)
+                session.state = State.IDLE;
             if (payload.message)
                 this._pushStep(session, short(payload.message));
             break;

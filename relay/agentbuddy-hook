@@ -1,0 +1,42 @@
+#!/usr/bin/env -S gjs -m
+// agentbuddy-hook: the command an AI coding agent runs on each hook event.
+// Usage: agentbuddy-hook [--agent <name>] [<EventName>]
+// The work is done in agentbuddy-hook-core.js, installed beside this file.
+
+import Gio from 'gi://Gio';
+import GioUnix from 'gi://GioUnix';
+import System from 'system';
+
+import {ancestorsFrom, parentPid, run} from './agentbuddy-hook-core.js';
+
+// fd 0 is read directly: the agent hands stdin over as a socket, which /dev/stdin cannot open.
+function readStdin() {
+    const chunks = [];
+    let total = 0;
+    try {
+        const stream = new GioUnix.InputStream({fd: 0, close_fd: false});
+        for (;;) {
+            const chunk = stream.read_bytes(65536, null).toArray();
+            if (!chunk.length)
+                break;
+            chunks.push(chunk);
+            total += chunk.length;
+        }
+    } catch (_e) {
+        // Unreadable stdin: whatever was read so far is used.
+    }
+    const raw = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+        raw.set(chunk, offset);
+        offset += chunk.length;
+    }
+    return raw;
+}
+
+const raw = readStdin();
+
+const out = run(System.programArgs ?? [], raw, {ancestors: ancestorsFrom(parentPid())});
+if (out)
+    print(out);
+System.exit(0);

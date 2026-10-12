@@ -26,6 +26,12 @@
     margin-left: 8px;
 }
 
+.ab-vertical .ab-title,
+.ab-vertical .ab-badge {
+    margin-left: 0;
+    margin-top: 4px;
+}
+
 .ab-badge {
     background-color: #ffb84d;
     color: #1a1200;
@@ -193,15 +199,21 @@
     margin-top: 4px;
 }
 
+/* Added and removed lines are tinted; the text itself is coloured by syntax. */
 .ab-diff-add {
-    color: #8fd18f;
+    color: #e6f4e6;
+    background-color: rgba(70, 180, 90, 0.20);
 }
 
 .ab-diff-del {
-    color: #f08a8a;
+    color: #f6e3e3;
+    background-color: rgba(220, 80, 80, 0.20);
 }
 
-.ab-diff-ctx,
+.ab-diff-ctx {
+    color: rgba(242, 242, 242, 0.6);
+}
+
 .ab-diff-gap {
     color: rgba(242, 242, 242, 0.45);
 }
