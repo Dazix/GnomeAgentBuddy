@@ -54,6 +54,10 @@ class Island extends St.Widget {
         this._dockFrom = this._dock;
         this._morph = new St.Adjustment({actor: this, value: 1, lower: 0, upper: 1});
         this._morph.connect('notify::value', () => this._bg.queue_repaint());
+        // While the size changes, the background stretches from `_glide.from` to `_glide.to`.
+        this._glide = null;
+        this._glideAdj = new St.Adjustment({actor: this, value: 1, lower: 0, upper: 1});
+        this._glideAdj.connect('notify::value', () => this._bg.queue_repaint());
         this._bg = new St.DrawingArea({x_expand: true, y_expand: true});
         this._bg.connect('repaint', area => this._paintBackground(area));
         this.add_child(this._bg);
@@ -265,11 +269,22 @@ class Island extends St.Widget {
     _paintBackground(area) {
         const cr = area.get_context();
         try {
-            const [w, h] = area.get_surface_size();
+            let [w, h] = area.get_surface_size();
+            let offsetX = 0;
+            let offsetY = 0;
+            if (this._glide) {
+                const t = this._glideAdj.value;
+                const {from, to} = this._glide;
+                const lerp = key => from[key] + (to[key] - from[key]) * t;
+                offsetX = lerp('x');
+                offsetY = lerp('y');
+                [w, h] = [lerp('w'), lerp('h')];
+            }
             const progress = this._morph.value;
             let outline = notchOutline(w, h, this._metrics, this._dock);
             if (progress < 1)
                 outline = blendOutlines(notchOutline(w, h, this._metrics, this._dockFrom), outline, progress);
+            outline = outline.map(([x, y]) => [x + offsetX, y + offsetY]);
             cr.setSourceRGBA(0.05, 0.05, 0.05, 0.97);
             outline.forEach(([x, y], i) => {
                 if (i === 0)
@@ -428,8 +443,7 @@ class Island extends St.Widget {
 
     /** Run `change`, then grow or shrink from the old size to the new one (width and height). */
     _resizeAround(change) {
-        this.remove_transition('width');
-        this.remove_transition('height');
+        this._endGlide();
         this._targetSize = null;
         const [width, height] = this.get_size();
         const animate = this.visible && this._shown && !this._drag && width > 0;
@@ -440,19 +454,52 @@ class Island extends St.Widget {
         const [, , newWidth, newHeight] = this.get_preferred_size();
         if (Math.round(newWidth) === width && Math.round(newHeight) === height)
             return;
-        this.set_size(width, height);
-        // The position glides with the size in the same transition: re-placing on every
-        // frame's allocation would lag one frame behind the width and shake sideways.
         this._targetSize = [newWidth, newHeight];
-        this.ease({
-            width: newWidth, height: newHeight, duration: RESIZE_MS,
-            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
-            onComplete: () => {
-                this._targetSize = null;
-                this.set_size(-1, -1);
-            },
-        });
         this._reposition();
+        const [oldX, oldY] = this.get_position();
+        const m = this._metrics.margin;
+        const {x, y} = this._place(this._savedSpot());
+        const to = {x: x - m, y: y - m, w: newWidth, h: newHeight};
+        const from = {x: oldX, y: oldY, w: width, h: height};
+        // The content jumps to its final place at once and stays there; only the drawn
+        // background stretches from the old rect to the new one, inside a widget that
+        // covers both.
+        const left = Math.min(from.x, to.x);
+        const top = Math.min(from.y, to.y);
+        const right = Math.max(from.x + from.w, to.x + to.w);
+        const bottom = Math.max(from.y + from.h, to.y + to.h);
+        this.set_position(left, top);
+        this.set_size(right - left, bottom - top);
+        // Fixed layout: children sit exactly where told, whatever their alignment would say.
+        this.layout_manager = new Clutter.FixedLayout();
+        this._bg.set_position(0, 0);
+        this._bg.set_size(right - left, bottom - top);
+        this._box.set_size(newWidth, newHeight);
+        this._box.set_position(to.x - left, to.y - top);
+        const rel = r => ({x: r.x - left, y: r.y - top, w: r.w, h: r.h});
+        this._glide = {from: rel(from), to: rel(to)};
+        this._glideAdj.remove_transition('value');
+        this._glideAdj.value = 0;
+        this._glideAdj.ease(1, {
+            duration: RESIZE_MS, mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+            onComplete: () => this._endGlide(),
+        });
+    }
+
+    /** The widget back to the size of its content, at the spot the stretch ended on. */
+    _endGlide() {
+        if (!this._glide)
+            return;
+        this._glide = null;
+        this._targetSize = null;
+        this._glideAdj.remove_transition('value');
+        this.layout_manager = new Clutter.BinLayout();
+        this._bg.set_size(-1, -1);
+        this._box.set_position(0, 0);
+        this._box.set_size(-1, -1);
+        this.set_size(-1, -1);
+        this._reposition();
+        this._bg.queue_repaint();
     }
 
     _titleFor(mood, request) {
@@ -584,6 +631,14 @@ class Island extends St.Widget {
         });
     }
 
+    _savedSpot() {
+        return {
+            x: this._settings.get_int('position-x'),
+            y: this._settings.get_int('position-y'),
+            edge: this._settings.get_string('position-edge'),
+        };
+    }
+
     /**
      * Where the user dropped it, snapped to the edges, else the top centre under the
      * panel (see lib/placement.js). `animate`: glide there and flow into the docked
@@ -595,16 +650,12 @@ class Island extends St.Widget {
         if (!primaryMonitor || this._drag)
             return;
         const m = this._metrics.margin;
-        const {x, y, dock} = this._place({
-            x: this._settings.get_int('position-x'),
-            y: this._settings.get_int('position-y'),
-            edge: this._settings.get_string('position-edge'),
-        });
+        const {x, y, dock} = this._place(this._savedSpot());
         this._setDock(dock, animate);
         if (animate) {
             this.ease({x: x - m, y: y - m, duration: MORPH_MS, mode: Clutter.AnimationMode.EASE_OUT_CUBIC});
         } else if (this._targetSize) {
-            this.ease({x: x - m, y: y - m, duration: RESIZE_MS, mode: Clutter.AnimationMode.EASE_OUT_CUBIC});
+            // Mid-stretch: `_resizeAround` places the widget itself.
         } else {
             // Only the position: a running fade or resize must go on.
             this.remove_transition('x');
