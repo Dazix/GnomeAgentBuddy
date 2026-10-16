@@ -114,8 +114,8 @@ export default class AgentBuddyPreferences extends ExtensionPreferences {
         const timing = new Adw.PreferencesGroup({title: 'Timing'});
         timing.add(spinRow(settings, 'decision-timeout', {
             title: 'Permission card timeout (seconds)',
-            subtitle: 'How long the card stays. The question is also asked in the terminal all along, and the agent gives up on the card at about 110 s.',
-            lower: 10, upper: 110, step: 5,
+            subtitle: 'How long the card stays. The question is also asked in the terminal all along, and the session shows as waiting until the agent goes on. The agent gives up on the card at about 15 min (hooks installed before this limit need a reinstall).',
+            lower: 10, upper: 890, step: 10,
         }));
         timing.add(spinRow(settings, 'auto-fold-seconds', {
             title: 'Fold when idle (seconds)',

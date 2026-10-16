@@ -22,7 +22,7 @@ import GLib from 'gi://GLib';
 
 const CONNECT_TIMEOUT_S = 1;
 const FIRE_AND_FORGET_BUDGET_S = 2;
-const DECISION_BUDGET_S = 110;
+const DECISION_BUDGET_S = 890;
 export const MAX_FIELD_LEN = 2000;
 const DROPPED_FIELDS = ['tool_response', 'tool_output'];
 const DIFF_TOOLS = ['Edit', 'MultiEdit', 'Write'];
