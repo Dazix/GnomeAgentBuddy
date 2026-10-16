@@ -25,7 +25,7 @@ test('claude: install keeps every other setting and every foreign hook, uninstal
     assertTrue(after.hooks.PreToolUse.some(e => JSON.stringify(e).includes('someone-elses-tool')));
     assertTrue(after.hooks.PreToolUse.some(entryIsOurs));
     assertEqual(after.hooks.Custom, existing.hooks.Custom);
-    assertEqual(after.hooks.PermissionRequest[0].hooks[0].timeout, 120);
+    assertEqual(after.hooks.PermissionRequest[0].hooks[0].timeout, 900);
     assertEqual(claude.installed(after), true);
     // Twice: still one entry of ours per event.
     const twice = claude.install(after, RELAY);
@@ -57,7 +57,7 @@ test('values of an unexpected type are refused, not replaced', () => {
 test('codex: no matcher, seconds, the waiting message on PermissionRequest', () => {
     const after = AGENTS.codex.install({}, RELAY);
     const permission = after.hooks.PermissionRequest[0].hooks[0];
-    assertEqual(permission.timeout, 120);
+    assertEqual(permission.timeout, 900);
     assertTrue(permission.command.includes('--agent codex PermissionRequest'));
     assertTrue(permission.statusMessage.includes('AgentBuddy'));
     assertEqual(after.hooks.PreToolUse[0].matcher, undefined);
@@ -76,7 +76,7 @@ test('gemini: star matcher, milliseconds, relay event names on the command line'
 test('copilot: own file, version 1, removing the last entry removes the file', () => {
     const after = AGENTS.copilot.install(undefined, RELAY);
     assertEqual(after.version, 1);
-    assertEqual(after.hooks.permissionRequest[0].timeoutSec, 120);
+    assertEqual(after.hooks.permissionRequest[0].timeoutSec, 900);
     assertTrue(after.hooks.preToolUse[0].bash.includes('--agent copilot preToolUse'));
     assertEqual(AGENTS.copilot.uninstall(after), null);
     // Someone else's entry in the same file keeps it alive.

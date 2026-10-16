@@ -379,11 +379,9 @@ export class SessionStore {
         const request = this.pending.find(r => r.id === requestId);
         if (!request)
             return;
+        // The session stays WAITING: the agent still asks in its terminal, and the next
+        // hook it fires (a tool, a prompt, a stop) is what tells that it went on.
         this._finish(request, null, false);
-        const session = this.sessions.get(request.sessionKey);
-        if (session && session.state === State.WAITING &&
-            !this.pending.some(r => r.sessionKey === session.key))
-            session.state = State.WORKING;
         this._changed();
     }
 
@@ -410,10 +408,8 @@ export class SessionStore {
         let changed = false;
         for (const request of [...this.pending]) {
             if (now - request.createdAt >= this.decisionTimeout * 1000) {
+                // The card goes, the session stays WAITING (see cancel()).
                 this._finish(request, null);
-                const session = this.sessions.get(request.sessionKey);
-                if (session && session.state === State.WAITING)
-                    session.state = State.WORKING;
                 changed = true;
             }
         }

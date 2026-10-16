@@ -55,7 +55,7 @@
       <summary>Agents shown in the notch</summary>
     </key>
     <key name="decision-timeout" type="i">
-      <range min="10" max="110"/>
+      <range min="10" max="890"/>
       <default>100</default>
       <summary>Seconds a permission card stays before it closes (the terminal keeps asking)</summary>
     </key>

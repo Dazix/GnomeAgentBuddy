@@ -219,6 +219,27 @@ test('prune: a request past the timeout is released with no decision', () => {
     assertEqual(store.pending.length, 0);
 });
 
+test('prune: a session whose card timed out keeps waiting until the agent goes on', () => {
+    const {store, clock} = makeStore();
+    store.handleEvent(ev('PermissionRequest', {tool_name: 'ExitPlanMode'}));
+    clock.t += 101_000;
+    store.prune();
+    assertEqual(store.pending.length, 0);
+    assertEqual(store.list()[0].state, State.WAITING);
+    store.handleEvent(ev('PreToolUse', {tool_name: 'Bash'}));
+    assertEqual(store.list()[0].state, State.WORKING);
+});
+
+test('cancel: the relay hanging up drops the card, the session keeps waiting', () => {
+    const {store} = makeStore();
+    const request = store.handleEvent(ev('PermissionRequest', {tool_name: 'ExitPlanMode'}));
+    store.cancel(request.id);
+    assertEqual(store.pending.length, 0);
+    assertEqual(store.list()[0].state, State.WAITING);
+    store.handleEvent(ev('Stop'));
+    assertEqual(store.list()[0].state, State.DONE);
+});
+
 test('stop: done session is happy, lingers, then goes away', () => {
     const {store, clock} = makeStore();
     store.handleEvent(ev('UserPromptSubmit'));
