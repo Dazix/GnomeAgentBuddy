@@ -1,4 +1,4 @@
-import {Mood, SessionStore, State, MAX_STEPS, MAX_EDITS, describeInput, displayText, parseQuestion, suggestionOptions, summarizeTool} from '../model/sessionStore.js';
+import {Mood, SessionStore, State, MAX_STEPS, MAX_EDITS, SUBAGENT_SILENCE, describeInput, displayText, parseQuestion, suggestionOptions, summarizeTool} from '../model/sessionStore.js';
 import {assertEqual, assertTrue, test} from './harness.js';
 
 function makeStore() {
@@ -236,6 +236,45 @@ test('cancel: the relay hanging up drops the card, the session keeps waiting', (
     store.cancel(request.id);
     assertEqual(store.pending.length, 0);
     assertEqual(store.list()[0].state, State.WAITING);
+    store.handleEvent(ev('Stop'));
+    assertEqual(store.list()[0].state, State.DONE);
+});
+
+test('subagents: a stop while background agents run stays working until the last one ends', () => {
+    const {store} = makeStore();
+    store.handleEvent(ev('UserPromptSubmit'));
+    store.handleEvent(ev('SubagentStart', {agent_id: 'a1'}));
+    store.handleEvent(ev('SubagentStart', {agent_id: 'a2'}));
+    store.handleEvent(ev('Stop', {last_assistant_message: 'Waiting for agents.'}));
+    assertEqual(store.list()[0].state, State.WORKING);
+    store.handleEvent(ev('Notification', {notification_type: 'idle_prompt'}));
+    assertEqual(store.list()[0].state, State.WORKING);
+    store.handleEvent(ev('PreToolUse', {tool_name: 'Read', agent_id: 'a1'}));
+    store.handleEvent(ev('SubagentStop', {agent_id: 'a1'}));
+    assertEqual(store.list()[0].state, State.WORKING);
+    store.handleEvent(ev('SubagentStop', {agent_id: 'a2'}));
+    assertEqual(store.list()[0].state, State.DONE);
+    assertEqual(store.list()[0].summary, 'Waiting for agents.');
+});
+
+test('subagents: a foreground subagent ending mid-turn does not finish the session', () => {
+    const {store} = makeStore();
+    store.handleEvent(ev('UserPromptSubmit'));
+    store.handleEvent(ev('SubagentStart'));
+    store.handleEvent(ev('SubagentStop'));
+    assertEqual(store.list()[0].state, State.WORKING);
+    store.handleEvent(ev('Stop'));
+    assertEqual(store.list()[0].state, State.DONE);
+});
+
+test('subagents: a lost SubagentStop is forgotten after a long silence', () => {
+    const {store, clock} = makeStore();
+    store.handleEvent(ev('SubagentStart', {agent_id: 'a1'}));
+    store.handleEvent(ev('Stop'));
+    assertEqual(store.list()[0].state, State.WORKING);
+    clock.t += (SUBAGENT_SILENCE + 1) * 1000;
+    store.prune();
+    assertEqual(store.list()[0].state, State.IDLE);
     store.handleEvent(ev('Stop'));
     assertEqual(store.list()[0].state, State.DONE);
 });
