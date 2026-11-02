@@ -21,6 +21,15 @@
       <default>true</default>
       <summary>Hide the notch while no agent session is running</summary>
     </key>
+    <key name="hide-after-idle" type="b">
+      <default>false</default>
+      <summary>Hide the notch once every session has been idle for a while</summary>
+    </key>
+    <key name="hide-after-idle-seconds" type="i">
+      <range min="5" max="3600"/>
+      <default>60</default>
+      <summary>Seconds all sessions stay idle before the notch hides</summary>
+    </key>
     <key name="overlay-panel" type="b">
       <default>false</default>
       <summary>Cover the top bar instead of hanging below it</summary>

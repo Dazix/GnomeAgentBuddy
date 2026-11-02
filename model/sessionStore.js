@@ -38,6 +38,20 @@ const short = (text, max = 80) => {
 
 const basename = path => String(path ?? '').split('/').filter(Boolean).pop() ?? '';
 
+/** Seconds without any event after which running subagents are presumed gone. */
+export const SUBAGENT_SILENCE = 15 * 60;
+const ANON_SUBAGENT = 'anon:';
+
+/** Key of a starting subagent: its agent_id, or a fresh one when the agent sends none. */
+function subagentId(payload, running) {
+    if (payload.agent_id)
+        return String(payload.agent_id);
+    let n = 0;
+    while (running.has(`${ANON_SUBAGENT}${n}`))
+        n++;
+    return `${ANON_SUBAGENT}${n}`;
+}
+
 /** One line describing a tool call, for the ticker and the permission card. */
 export function summarizeTool(tool, input = {}) {
     const name = tool || 'tool';
@@ -210,6 +224,7 @@ export class SessionStore {
                 key, agent, id, cwd: payload.cwd ?? '', project: basename(payload.cwd),
                 state: State.IDLE, steps: [], edits: [], pids: [], prompt: '', summary: '', startedAt: now, updatedAt: now,
                 title: '', transcriptPath: '', titleCheckedAt: 0, dead: false,
+                subagents: new Set(), stoppedForAgents: false,
             };
             this.sessions.set(key, session);
         }
@@ -233,11 +248,15 @@ export class SessionStore {
             break;
         case 'UserPromptSubmit':
             session.state = State.WORKING;
+            session.stoppedForAgents = false;
             session.prompt = short(payload.prompt ?? '', 120);
             session.summary = '';
             break;
         case 'PreToolUse':
             session.state = State.WORKING;
+            // The main agent (a subagent's call carries agent_id) is on a new turn.
+            if (!payload.agent_id)
+                session.stoppedForAgents = false;
             this._clearPending(key, null);
             this._pushStep(session, summarizeTool(payload.tool_name, payload.tool_input));
             break;
@@ -255,15 +274,31 @@ export class SessionStore {
             break;
         case 'Notification':
             // An interrupted turn fires no Stop; the agent's own idle reminder says it is waiting.
-            if (payload.notification_type === 'idle_prompt' && session.state === State.WORKING)
+            // Background subagents still at work keep it working although the main agent idles.
+            if (payload.notification_type === 'idle_prompt' && session.state === State.WORKING &&
+                !session.subagents.size)
                 session.state = State.IDLE;
             if (payload.message)
                 this._pushStep(session, short(payload.message));
             break;
+        case 'SubagentStart':
+            session.subagents.add(subagentId(payload, session.subagents));
+            if (session.state !== State.WAITING)
+                session.state = State.WORKING;
+            break;
+        case 'SubagentStop':
+            this._endSubagent(session, payload, now);
+            break;
         case 'Stop':
             this._clearPending(key, null);
-            session.state = State.DONE;
             session.summary = short(payload.last_assistant_message ?? payload.message ?? '', 140);
+            // The turn ended but background subagents run on: done only once they finish.
+            if (session.subagents.size) {
+                session.state = State.WORKING;
+                session.stoppedForAgents = true;
+                break;
+            }
+            session.state = State.DONE;
             this._lastDoneAt = now;
             break;
         case 'StopFailure':
@@ -297,6 +332,22 @@ export class SessionStore {
             session.title = title;
             this._changed();
         }).catch(() => {});
+    }
+
+    /** A subagent finished; the last one of a turn that already stopped finishes the session. */
+    _endSubagent(session, payload, now) {
+        const id = payload.agent_id;
+        if (id && session.subagents.has(id))
+            session.subagents.delete(id);
+        else
+            session.subagents.delete([...session.subagents].find(s => s.startsWith(ANON_SUBAGENT)));
+        if (session.subagents.size || !session.stoppedForAgents)
+            return;
+        session.stoppedForAgents = false;
+        if (session.state === State.WORKING) {
+            session.state = State.DONE;
+            this._lastDoneAt = now;
+        }
     }
 
     _addRequest(session, payload, respond) {
@@ -419,12 +470,22 @@ export class SessionStore {
             if (!session.dead && this._processGone(session)) {
                 session.dead = true;
                 session.state = State.IDLE;
+                session.subagents.clear();
+                session.stoppedForAgents = false;
                 this._clearPending(session.key, null);
                 changed = true;
             }
             if (session.dead)
                 continue;
             const idleFor = (now - session.updatedAt) / 1000;
+            // A subagent whose SubagentStop never came would keep the session working for good.
+            if (session.subagents.size && idleFor > SUBAGENT_SILENCE) {
+                session.subagents.clear();
+                if (session.stoppedForAgents && session.state === State.WORKING)
+                    session.state = State.IDLE;
+                session.stoppedForAgents = false;
+                changed = true;
+            }
             const finished = session.state === State.DONE || session.state === State.ERROR;
             if (finished && idleFor > this.finishedLinger) {
                 session.state = State.IDLE;
@@ -464,6 +525,22 @@ export class SessionStore {
     /** The oldest request nobody answered yet. */
     get current() {
         return this.pending[0] ?? null;
+    }
+
+    /**
+     * When every session became idle (ms timestamp of the latest activity), or null while
+     * something works, waits, finished a moment ago or asks, or when there is no session.
+     */
+    idleSince() {
+        if (this.pending.length || !this.sessions.size)
+            return null;
+        let since = 0;
+        for (const session of this.sessions.values()) {
+            if (!session.dead && session.state !== State.IDLE)
+                return null;
+            since = Math.max(since, session.updatedAt);
+        }
+        return since;
     }
 
     /** What the mascot should feel like right now. */
