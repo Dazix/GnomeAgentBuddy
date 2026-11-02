@@ -466,6 +466,22 @@ export class SessionStore {
         return this.pending[0] ?? null;
     }
 
+    /**
+     * When every session became idle (ms timestamp of the latest activity), or null while
+     * something works, waits, finished a moment ago or asks, or when there is no session.
+     */
+    idleSince() {
+        if (this.pending.length || !this.sessions.size)
+            return null;
+        let since = 0;
+        for (const session of this.sessions.values()) {
+            if (!session.dead && session.state !== State.IDLE)
+                return null;
+            since = Math.max(since, session.updatedAt);
+        }
+        return since;
+    }
+
     /** What the mascot should feel like right now. */
     mood() {
         const now = this._now();

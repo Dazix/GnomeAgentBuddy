@@ -93,7 +93,14 @@ export default class AgentBuddyPreferences extends ExtensionPreferences {
             title: 'Compact height', subtitle: 'Trim the vertical padding of the collapsed notch',
         }));
         look.add(switchRow(settings, 'hide-when-idle', {
-            title: 'Hide while idle', subtitle: 'Only show the notch while an agent session is running',
+            title: 'Hide when there are no sessions', subtitle: 'Hide the notch right away while no agent session exists. Sessions that are open but idle keep it visible',
+        }));
+        look.add(switchRow(settings, 'hide-after-idle', {
+            title: 'Hide when all sessions are idle',
+            subtitle: 'Hide the notch after every session has been idle for the time below. Any activity brings it back',
+        }));
+        look.add(spinRow(settings, 'hide-after-idle-seconds', {
+            title: 'Hide after (seconds)', lower: 5, upper: 3600, step: 5,
         }));
         look.add(switchRow(settings, 'overlay-panel', {
             title: 'Cover the top bar', subtitle: 'Sit over the top bar instead of hanging below it',

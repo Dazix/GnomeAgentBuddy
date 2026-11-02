@@ -345,3 +345,15 @@ test('the relay process chain is kept (cleaned) and survives events without one'
     store.handleEvent(ev('PreToolUse', {tool_name: 'Bash', tool_input: {command: 'ls'}}));
     assertEqual(store.list()[0].pids, [30, 20]);
 });
+
+test('idleSince: only once every live session is idle, from its latest activity', () => {
+    const {store, clock} = makeStore();
+    assertEqual(store.idleSince(), null);
+    store.handleEvent(ev('UserPromptSubmit', {prompt: 'go'}));
+    assertEqual(store.idleSince(), null);
+    clock.t += 5_000;
+    store.handleEvent(ev('Notification', {notification_type: 'idle_prompt', message: 'x'}));
+    assertEqual(store.idleSince(), clock.t);
+    store.handleEvent(ev('UserPromptSubmit', {prompt: 'again'}));
+    assertEqual(store.idleSince(), null);
+});

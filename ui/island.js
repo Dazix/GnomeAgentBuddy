@@ -125,6 +125,7 @@ class Island extends St.Widget {
         });
         // Unfolded and left alone (no pointer, no key focus) it folds after `auto-fold-seconds`.
         this._foldTimer = 0;
+        this._idleHideTimer = 0;
         this._focusId = global.stage.connect('notify::key-focus', () => this._syncFoldTimer());
 
         this.applySettings();
@@ -387,7 +388,8 @@ class Island extends St.Widget {
         this._badge.text = String(count);
 
         const idle = !store.sessions.size && !request;
-        const hidden = idle && !this._expanded && this._settings.get_boolean('hide-when-idle');
+        const hidden = !this._expanded &&
+            ((idle && this._settings.get_boolean('hide-when-idle')) || this._idleHideDue());
         if (hidden) {
             this._fade(false);
             return;
@@ -398,6 +400,32 @@ class Island extends St.Widget {
             this._renderBody(request);
         });
         this._reposition();
+    }
+
+    /**
+     * True once all sessions have been idle for `hide-after-idle-seconds`. Until then it
+     * arms a timer that refreshes at the deadline; any other state clears the timer.
+     */
+    _idleHideDue() {
+        if (this._idleHideTimer) {
+            GLib.source_remove(this._idleHideTimer);
+            this._idleHideTimer = 0;
+        }
+        if (!this._settings.get_boolean('hide-after-idle'))
+            return false;
+        const since = this._store.idleSince();
+        if (since === null)
+            return false;
+        const left = since + this._settings.get_int('hide-after-idle-seconds') * 1000 - this._store._now();
+        if (left <= 0)
+            return true;
+        this._idleHideTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, left + 50, () => {
+            this._idleHideTimer = 0;
+            this.refresh();
+            return GLib.SOURCE_REMOVE;
+        });
+        GLib.Source.set_name_by_id(this._idleHideTimer, '[AgentBuddy] hide-after-idle');
+        return false;
     }
 
     _targetOpacity() {
@@ -638,6 +666,10 @@ class Island extends St.Widget {
         if (this._foldTimer) {
             GLib.source_remove(this._foldTimer);
             this._foldTimer = 0;
+        }
+        if (this._idleHideTimer) {
+            GLib.source_remove(this._idleHideTimer);
+            this._idleHideTimer = 0;
         }
         super.destroy();
     }
