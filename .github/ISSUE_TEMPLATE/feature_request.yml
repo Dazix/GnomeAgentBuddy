@@ -1,0 +1,16 @@
+name: Feature request
+description: A new agent, a setting, or a change to the notch
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do
+      description: The problem you are trying to solve, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: For a new agent, link its hook documentation if you know it.
