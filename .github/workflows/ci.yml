@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install gjs
-        run: sudo apt-get update && sudo apt-get install -y gjs libglib2.0-bin
+        run: sudo apt-get update && sudo apt-get install -y gjs libglib2.0-bin gir1.2-gdkpixbuf-2.0
       # Compiles for real (not --dry-run): a test reads the compiled schema.
       - name: Compile and validate GSettings schema
         run: glib-compile-schemas --strict schemas/

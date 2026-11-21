@@ -104,6 +104,10 @@ mascot pose is ever clipped by its box. UI that needs a running shell is checked
 CI runs the `test` job (GSettings schema validation and the
 tests above) on every pull request.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md); report security problems privately as described in [SECURITY.md](SECURITY.md).
+
 ## License
 
 The code is under the [MIT License](LICENSE). Parts of the relay (`relay/agentbuddy-hook-core.js`: event and field
